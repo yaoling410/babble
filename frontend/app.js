@@ -1979,6 +1979,8 @@ function closeVoiceSession() {
 // voiceHoldStart — called on mousedown/touchstart of the "Hold to Speak" button
 async function voiceHoldStart(session) {
   if (!state.voiceWs || state.voiceWs.readyState !== WebSocket.OPEN) return;
+  // Tell Gemini the user has started speaking (required when server VAD is disabled).
+  state.voiceWs.send(JSON.stringify({ type: 'activity_start' }));
 
   const transcriptId = session === 'edit' ? 'edit-log-transcript' : 'companion-transcript';
   const volWrapId   = session === 'edit' ? 'voice-vol-edit'      : 'voice-vol-companion';

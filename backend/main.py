@@ -77,6 +77,7 @@ class AnalyzeRequest(BaseModel):
     baby_name: str
     baby_age_months: int
     timestamp: str  # ISO 8601
+    clip_duration_sec: Optional[float] = None
     context: Optional[dict] = None  # {events_today: [...], last_clip_summary: str}
     reference_audio: Optional[list[dict]] = None  # [{audio_base64: str, type: 'voice_reference'|'recent'}]
 
@@ -200,11 +201,15 @@ async def analyze(req: AnalyzeRequest):
                 "bytes": base64.b64decode(ref["audio_base64"]),
                 "type": ref.get("type", "recent"),
                 "label": ref.get("label", ""),
+                "mime_type": ref.get("mime_type", "audio/webm"),
             })
         except Exception:
             continue  # skip malformed entries
 
     known_caregivers = context.get("known_caregivers", [])
+
+    if req.clip_duration_sec is not None:
+        print(f"[analyze] clip_duration_sec={req.clip_duration_sec:.1f}s baby={req.baby_name}")
 
     # Call Gemini 2.5 Flash — returns (events, usage, raw_events)
     try:
@@ -217,6 +222,7 @@ async def analyze(req: AnalyzeRequest):
             clip_timestamp=req.timestamp,
             reference_clips=reference_clips,
             known_caregivers=known_caregivers,
+            clip_duration_sec=req.clip_duration_sec,
         )
     except Exception as e:
         asyncio.create_task(db.write_log("ERROR", f"Gemini analyze_audio failed: {e}", {"baby_name": req.baby_name}))
@@ -235,9 +241,9 @@ async def analyze(req: AnalyzeRequest):
 
     for raw in detected:
         new_logging = raw.get("new_logging", True)
-        event_type = raw.get("new_logging_type")
+        event_type = raw.get("event_type")
         caregiver_hint = raw.get("caregiver_hint")
-        caregiver_audio_sig = raw.get("caregiver_audio_signature")
+        caregiver_voice_match = raw.get("caregiver_voice_match")
 
         if new_logging:
             # Build the Firestore event document from new_logging_* fields
@@ -246,8 +252,11 @@ async def analyze(req: AnalyzeRequest):
                 "timestamp": raw.get("new_logging_timestamp"),
                 "detail": raw.get("new_logging_detail"),
                 "notable": raw.get("notable", False),
-                "caregiver_hint": caregiver_hint or caregiver_audio_sig,
+                "caregiver_hint": caregiver_hint or caregiver_voice_match,
             }
+            voice_seg = raw.get("caregiver_voice_segment")
+            if voice_seg and isinstance(voice_seg, dict):
+                event["caregiver_voice_segment"] = voice_seg
             # Safety-net dedup: if a very similar event already exists, enrich instead
             dup_id = _find_similar_event(event, recent_events)
             if dup_id:
@@ -390,13 +399,15 @@ async def put_caregiver(name: str, payload: CaregiverPayload):
 async def ws_edit_log(websocket: WebSocket):
     await websocket.accept()
 
-    # Expect first message to be JSON config: {baby_name, baby_age_months, date?}
+    # Expect first message to be JSON config: {baby_name, baby_age_months, date?, local_now?, tz_offset_minutes?}
     try:
         config_raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
         config = json.loads(config_raw)
         baby_name = config["baby_name"]
         baby_age_months = int(config["baby_age_months"])
         date_str = config.get("date")
+        local_now = config.get("local_now")
+        tz_offset_minutes = config.get("tz_offset_minutes", 0)
     except Exception as e:
         await websocket.send_json({"type": "error", "message": str(e)})
         await websocket.close()
@@ -421,17 +432,28 @@ async def ws_edit_log(websocket: WebSocket):
     async def text_out(text: str):
         await websocket.send_json({"type": "transcript", "role": "gemini", "text": text})
 
+    async def input_transcript(text: str):
+        await websocket.send_json({"type": "transcript", "role": "user", "text": text})
+
     async def edit_cmd(cmd: dict):
+        from google.api_core.exceptions import NotFound
         action = cmd.get("action")
         event_id = cmd.get("event_id")
         fields = cmd.get("fields", {})
 
-        if action == "update" and event_id:
-            await db.update_event(event_id, fields, date_str)
-        elif action == "delete" and event_id:
-            await db.delete_event(event_id, date_str)
-        elif action == "add" and fields:
-            await db.add_event(fields, date_str)
+        try:
+            if action == "update" and event_id:
+                await db.update_event(event_id, fields, date_str)
+            elif action == "delete" and event_id:
+                await db.delete_event(event_id, date_str)
+            elif action == "add" and fields:
+                await db.add_event(fields, date_str)
+        except NotFound:
+            # Event was deleted between session start and now — treat as add if updating
+            if action == "update" and fields:
+                await db.add_event(fields, date_str)
+        except Exception as e:
+            asyncio.create_task(db.write_log("ERROR", f"edit_cmd failed: {e}", {"cmd": cmd}))
 
         asyncio.create_task(db.write_log("INFO", f"Voice edit command: {action}", {"event_id": event_id, "date": date_str}))
         await websocket.send_json({"type": "edit_applied", "cmd": cmd})
@@ -447,6 +469,10 @@ async def ws_edit_log(websocket: WebSocket):
                     if data.get("type") == "done":
                         await audio_queue.put(None)
                         break
+                    elif data.get("type") == "activity_start":
+                        await audio_queue.put("ACTIVITY_START")
+                    elif data.get("type") == "activity_end":
+                        await audio_queue.put("ACTIVITY_END")
         except WebSocketDisconnect:
             await audio_queue.put(None)
 
@@ -456,14 +482,23 @@ async def ws_edit_log(websocket: WebSocket):
             live.run_edit_log_session(
                 baby_name=baby_name,
                 events=events,
+                local_now=local_now,
+                tz_offset_minutes=tz_offset_minutes,
                 audio_in=audio_in(),
                 audio_out_callback=audio_out,
                 text_out_callback=text_out,
                 edit_cmd_callback=edit_cmd,
+                input_transcript_callback=input_transcript,
             ),
         )
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        await db.write_log("ERROR", f"Edit-log session error: {e}", {"baby_name": baby_name})
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
     finally:
         updated_events = await db.get_events(date_str)
         try:
@@ -478,7 +513,9 @@ async def ws_edit_log(websocket: WebSocket):
 
 @app.websocket("/ws/voice/companion")
 async def ws_companion(websocket: WebSocket):
+    print("[ws_companion] connection received")
     await websocket.accept()
+    print("[ws_companion] accepted")
 
     try:
         config_raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
@@ -509,7 +546,13 @@ async def ws_companion(websocket: WebSocket):
     async def text_out(text: str):
         await websocket.send_json({"type": "transcript", "role": "gemini", "text": text})
 
+    async def input_transcript(text: str):
+        await websocket.send_json({"type": "transcript", "role": "user", "text": text})
+
+    summary_was_updated = False
+
     async def summary_update(conversation_text: str):
+        nonlocal summary_was_updated
         # Re-generate summary with updated info after session ends
         try:
             events = await db.get_events(date_str)
@@ -517,6 +560,7 @@ async def ws_companion(websocket: WebSocket):
             await _accumulate(usage)
             new_summary["generated_at"] = datetime.now(timezone.utc).isoformat()
             await db.set_summary(new_summary, date_str)
+            summary_was_updated = True
         except Exception as e:
             await db.write_log("ERROR", f"Companion summary update error: {e}", {"baby_name": baby_name, "date": date_str})
 
@@ -531,6 +575,10 @@ async def ws_companion(websocket: WebSocket):
                     if data.get("type") == "done":
                         await audio_queue.put(None)
                         break
+                    elif data.get("type") == "activity_start":
+                        await audio_queue.put("ACTIVITY_START")
+                    elif data.get("type") == "activity_end":
+                        await audio_queue.put("ACTIVITY_END")
         except WebSocketDisconnect:
             await audio_queue.put(None)
 
@@ -543,14 +591,22 @@ async def ws_companion(websocket: WebSocket):
                 audio_in=audio_in(),
                 audio_out_callback=audio_out,
                 text_out_callback=text_out,
+                input_transcript_callback=input_transcript,
                 summary_update_callback=summary_update,
             ),
         )
     except WebSocketDisconnect:
         pass
-    finally:
-        updated_summary = await db.get_summary(date_str)
+    except Exception as e:
+        await db.write_log("ERROR", f"Companion session error: {e}", {"baby_name": baby_name})
         try:
-            await websocket.send_json({"type": "session_end", "summary": updated_summary})
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+    finally:
+        # Only re-fetch summary if it was actually updated during the session
+        final_summary = await db.get_summary(date_str) if summary_was_updated else summary
+        try:
+            await websocket.send_json({"type": "session_end", "summary": final_summary})
         except Exception:
             pass
