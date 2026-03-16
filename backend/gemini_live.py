@@ -160,50 +160,55 @@ async def run_edit_log_session(
                         audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000")
                     )
 
-        async def receive():
-            async for response in session.receive():
-                # Audio response
-                if response.data:
-                    await audio_out_callback(response.data)
+        async def receive_all_turns():
+            # session.receive() covers ONE turn then exits; loop to handle multiple turns.
+            while True:
+                async for response in session.receive():
+                    # Audio response
+                    if response.data:
+                        await audio_out_callback(response.data)
 
-                # Tool call — Gemini wants to edit an event
-                if response.tool_call:
-                    tool_responses = []
-                    for fn in response.tool_call.function_calls:
-                        args = dict(fn.args) if fn.args else {}
-                        try:
-                            if fn.name == "update_event":
-                                await edit_cmd_callback({"action": "update", "event_id": args["event_id"], "fields": args.get("fields", {})})
-                            elif fn.name == "delete_event":
-                                await edit_cmd_callback({"action": "delete", "event_id": args["event_id"]})
-                            elif fn.name == "add_event":
-                                await edit_cmd_callback({"action": "add", "fields": {**args, "confidence": 90, "notable": args.get("notable", False)}})
-                            tool_responses.append(types.FunctionResponse(
-                                id=fn.id, name=fn.name, response={"result": "success"}
-                            ))
-                        except Exception as e:
-                            tool_responses.append(types.FunctionResponse(
-                                id=fn.id, name=fn.name, response={"result": "error", "message": str(e)}
-                            ))
-                    await session.send_tool_response(function_responses=tool_responses)
+                    # Tool call — Gemini wants to edit an event
+                    if response.tool_call:
+                        tool_responses = []
+                        for fn in response.tool_call.function_calls:
+                            args = dict(fn.args) if fn.args else {}
+                            try:
+                                if fn.name == "update_event":
+                                    await edit_cmd_callback({"action": "update", "event_id": args["event_id"], "fields": args.get("fields", {})})
+                                elif fn.name == "delete_event":
+                                    await edit_cmd_callback({"action": "delete", "event_id": args["event_id"]})
+                                elif fn.name == "add_event":
+                                    await edit_cmd_callback({"action": "add", "fields": {**args, "confidence": 90, "notable": args.get("notable", False)}})
+                                tool_responses.append(types.FunctionResponse(
+                                    id=fn.id, name=fn.name, response={"result": "success"}
+                                ))
+                            except Exception as e:
+                                tool_responses.append(types.FunctionResponse(
+                                    id=fn.id, name=fn.name, response={"result": "error", "message": str(e)}
+                                ))
+                        await session.send_tool_response(function_responses=tool_responses)
 
-                # Transcripts via server_content
-                sc = getattr(response, "server_content", None)
-                if sc:
-                    ot = getattr(sc, "output_transcription", None)
-                    if ot and getattr(ot, "text", None):
-                        await text_out_callback(ot.text.strip())
-                    it = getattr(sc, "input_transcription", None)
-                    if it and getattr(it, "text", None):
-                        await input_transcript_callback(it.text.strip())
+                    # Transcripts via server_content
+                    sc = getattr(response, "server_content", None)
+                    if sc:
+                        ot = getattr(sc, "output_transcription", None)
+                        if ot and getattr(ot, "text", None):
+                            await text_out_callback(ot.text.strip())
+                        it = getattr(sc, "input_transcription", None)
+                        if it and getattr(it, "text", None):
+                            await input_transcript_callback(it.text.strip())
 
-        send_task = asyncio.create_task(send_audio())
+        # receive_all_turns runs as a task; send_audio drives the lifecycle.
+        # When audio_in is exhausted ("done" signal), send_audio returns and we
+        # cancel the receive task, which exits the async-with and closes the session.
+        receive_task = asyncio.create_task(receive_all_turns())
         try:
-            await receive()
+            await send_audio()
         finally:
-            send_task.cancel()
+            receive_task.cancel()
             try:
-                await send_task
+                await receive_task
             except asyncio.CancelledError:
                 pass
 
@@ -274,33 +279,36 @@ async def run_companion_session(
                     print(f"[companion] send_audio error: {e!r}")
                     raise
 
-            async def receive():
-                async for response in session.receive():
-                    if response.data:
-                        await audio_out_callback(response.data)
-                    sc = getattr(response, "server_content", None)
-                    if sc:
-                        ot = getattr(sc, "output_transcription", None)
-                        if ot and getattr(ot, "text", None):
-                            text = ot.text.strip()
-                            if text:
-                                await text_out_callback(text)
-                                collected_updates.append(text)
-                        it = getattr(sc, "input_transcription", None)
-                        if it and getattr(it, "text", None):
-                            await input_transcript_callback(it.text.strip())
+            async def receive_all_turns():
+                # session.receive() covers ONE turn then exits; loop to handle multiple turns.
+                while True:
+                    async for response in session.receive():
+                        if response.data:
+                            await audio_out_callback(response.data)
+                        sc = getattr(response, "server_content", None)
+                        if sc:
+                            ot = getattr(sc, "output_transcription", None)
+                            if ot and getattr(ot, "text", None):
+                                text = ot.text.strip()
+                                if text:
+                                    await text_out_callback(text)
+                                    collected_updates.append(text)
+                            it = getattr(sc, "input_transcription", None)
+                            if it and getattr(it, "text", None):
+                                await input_transcript_callback(it.text.strip())
 
-            send_task = asyncio.create_task(send_audio())
+            # receive_all_turns runs as a task; send_audio drives the lifecycle.
+            receive_task = asyncio.create_task(receive_all_turns())
             try:
-                await receive()
+                await send_audio()
             finally:
-                send_task.cancel()
+                receive_task.cancel()
                 try:
-                    await send_task
+                    await receive_task
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
-                    print(f"[companion] send_task raised: {e!r}")
+                    print(f"[companion] receive_task raised: {e!r}")
     except Exception as e:
         print(f"[companion] session error {type(e).__name__}: {e!r}")
         raise
