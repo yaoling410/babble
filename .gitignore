@@ -1,0 +1,31 @@
+# Environment
+.env
+*.env.local
+
+# Test fixtures (exported audio clips — generate locally, don't commit)
+backend/tests/fixtures/*.webm
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Node (if any tooling added)
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

@@ -1,0 +1,278 @@
+<svg width="1100" height="700" viewBox="0 0 1100 700"
+     xmlns="http://www.w3.org/2000/svg"
+     font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+
+  <!-- ── Background ── -->
+  <rect width="1100" height="700" fill="#f1f5f9" rx="16"/>
+
+  <!-- ── Arrow markers ── -->
+  <defs>
+    <marker id="ah-slate"  markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L9,3.5 z" fill="#64748b"/></marker>
+    <marker id="ah-green"  markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L9,3.5 z" fill="#10b981"/></marker>
+    <marker id="ah-violet" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L9,3.5 z" fill="#7c3aed"/></marker>
+    <marker id="ah-blue"   markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L9,3.5 z" fill="#2563eb"/></marker>
+    <marker id="ah-amber"  markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L0,7 L9,3.5 z" fill="#d97706"/></marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#00000018"/>
+    </filter>
+  </defs>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  TITLE                                                  -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <text x="550" y="36" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">Babble — System Architecture</text>
+  <text x="550" y="56" text-anchor="middle" font-size="12" fill="#64748b">AI-powered baby monitor · Gemini 2.5 Flash + Live API · FastAPI on Cloud Run · Firestore</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  BOX 1 — FRONTEND PWA                                   -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <rect x="18" y="75" width="226" height="500" fill="white" stroke="#6366f1" stroke-width="2" rx="12" filter="url(#shadow)"/>
+  <!-- Header -->
+  <rect x="18" y="75" width="226" height="40" fill="#6366f1" rx="12"/>
+  <rect x="18" y="99"  width="226" height="16" fill="#6366f1"/>
+  <text x="131" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="white">📱  Frontend PWA</text>
+  <text x="131" y="114" text-anchor="middle" font-size="10" fill="#c7d2fe">Browser / Phone</text>
+
+  <!-- Section: Audio -->
+  <text x="34" y="138" font-size="10" font-weight="700" fill="#4338ca" letter-spacing="0.5">AUDIO PIPELINE</text>
+  <text x="34" y="154" font-size="10" fill="#374151">• MediaRecorder — WebM / Opus 48 kHz</text>
+  <text x="34" y="169" font-size="10" fill="#374151">• WebAudio VAD  (RMS + spectral gate)</text>
+  <text x="34" y="184" font-size="10" fill="#374151">• 15 s overlapping clips, clip cache (IDB)</text>
+  <text x="34" y="199" font-size="10" fill="#374151">• Recent-clip context sent with each call</text>
+
+  <line x1="28" y1="209" x2="234" y2="209" stroke="#e0e7ff" stroke-width="1"/>
+
+  <!-- Section: Screens -->
+  <text x="34" y="224" font-size="10" font-weight="700" fill="#4338ca" letter-spacing="0.5">UI SCREENS</text>
+  <text x="34" y="240" font-size="10" fill="#374151">• Today's Log  — polls GET /events every 3 s</text>
+  <text x="34" y="255" font-size="10" fill="#374151">• Day Summary  — structured + tweet card</text>
+  <text x="34" y="270" font-size="10" fill="#374151">• Yesterday card  (loaded on wake)</text>
+  <text x="34" y="285" font-size="10" fill="#374151">• Debug panel  — per-clip raw Gemini output</text>
+
+  <line x1="28" y1="295" x2="234" y2="295" stroke="#e0e7ff" stroke-width="1"/>
+
+  <!-- Section: Voice -->
+  <text x="34" y="310" font-size="10" font-weight="700" fill="#4338ca" letter-spacing="0.5">VOICE OVERLAYS  (WebSocket)</text>
+  <text x="34" y="326" font-size="10" fill="#374151">• Edit Log  — parent corrects / adds events</text>
+  <text x="34" y="341" font-size="10" fill="#374151">• Companion  — warm parenting chat</text>
+  <text x="34" y="356" font-size="10" fill="#374151">• Bidirectional PCM audio stream</text>
+
+  <line x1="28" y1="366" x2="234" y2="366" stroke="#e0e7ff" stroke-width="1"/>
+
+  <!-- Section: Profiles -->
+  <text x="34" y="381" font-size="10" font-weight="700" fill="#4338ca" letter-spacing="0.5">CAREGIVER PROFILES</text>
+  <text x="34" y="397" font-size="10" fill="#374151">• Voice reference clip  (saved to Firestore)</text>
+  <text x="34" y="412" font-size="10" fill="#374151">• Normal-tone baselines per caregiver</text>
+  <text x="34" y="427" font-size="10" fill="#374151">• Speaker ID — confirmed after 2 clips</text>
+
+  <line x1="28" y1="437" x2="234" y2="437" stroke="#e0e7ff" stroke-width="1"/>
+
+  <!-- Section: Storage -->
+  <text x="34" y="452" font-size="10" font-weight="700" fill="#4338ca" letter-spacing="0.5">LOCAL STATE</text>
+  <text x="34" y="468" font-size="10" fill="#374151">• Baby profile — localStorage</text>
+  <text x="34" y="483" font-size="10" fill="#374151">• Midnight auto-reset + new-day card</text>
+  <text x="34" y="498" font-size="10" fill="#374151">• Screen Wake Lock  (passive mode)</text>
+  <text x="34" y="513" font-size="10" fill="#374151">• Optimistic event merge (no re-fetch)</text>
+  <text x="34" y="528" font-size="10" fill="#374151">• Service Worker  (PWA / offline UI)</text>
+  <text x="34" y="553" font-size="10" font-style="italic" fill="#6366f1">Runs in any browser — no install needed</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  BOX 2 — FASTAPI BACKEND                                -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <rect x="290" y="75" width="250" height="500" fill="white" stroke="#10b981" stroke-width="2" rx="12" filter="url(#shadow)"/>
+  <rect x="290" y="75"  width="250" height="40" fill="#10b981" rx="12"/>
+  <rect x="290" y="99"  width="250" height="16" fill="#10b981"/>
+  <text x="415" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="white">⚙️  FastAPI Backend</text>
+  <text x="415" y="114" text-anchor="middle" font-size="10" fill="#a7f3d0">Cloud Run · Python 3.11</text>
+
+  <!-- Section: Analyze -->
+  <text x="306" y="138" font-size="10" font-weight="700" fill="#065f46" letter-spacing="0.5">AUDIO ANALYSIS  —  POST /analyze</text>
+  <text x="306" y="154" font-size="10" fill="#374151">• Decode base64 audio  →  call Gemini</text>
+  <text x="306" y="169" font-size="10" fill="#374151">• Safety-net dedup  (15-min / 35% overlap)</text>
+  <text x="306" y="184" font-size="10" fill="#374151">• Confidence filter  ≥ 70 (vague ≥ 80)</text>
+  <text x="306" y="199" font-size="10" fill="#374151">• Enrich past events  (enriches_event_id)</text>
+  <text x="306" y="214" font-size="10" fill="#374151">• Auto-summarize background task</text>
+
+  <line x1="300" y1="224" x2="530" y2="224" stroke="#a7f3d0" stroke-width="1"/>
+
+  <!-- Section: CRUD -->
+  <text x="306" y="239" font-size="10" font-weight="700" fill="#065f46" letter-spacing="0.5">EVENT CRUD</text>
+  <text x="306" y="255" font-size="10" fill="#374151">GET    /events?date=YYYY-MM-DD</text>
+  <text x="306" y="270" font-size="10" fill="#374151">PATCH  /events/{id}  — field merge</text>
+  <text x="306" y="285" font-size="10" fill="#374151">DELETE /events/{id}</text>
+
+  <line x1="300" y1="295" x2="530" y2="295" stroke="#a7f3d0" stroke-width="1"/>
+
+  <!-- Section: Summary -->
+  <text x="306" y="310" font-size="10" font-weight="700" fill="#065f46" letter-spacing="0.5">DAILY SUMMARY</text>
+  <text x="306" y="326" font-size="10" fill="#374151">POST /summary/generate  — on-demand</text>
+  <text x="306" y="341" font-size="10" fill="#374151">GET  /summary?date=  — cached in Firestore</text>
+
+  <line x1="300" y1="351" x2="530" y2="351" stroke="#a7f3d0" stroke-width="1"/>
+
+  <!-- Section: Voice WS -->
+  <text x="306" y="366" font-size="10" font-weight="700" fill="#065f46" letter-spacing="0.5">VOICE WEBSOCKETS  (Gemini Live bridge)</text>
+  <text x="306" y="382" font-size="10" fill="#374151">WS /ws/voice/edit-log</text>
+  <text x="306" y="397" font-size="10" fill="#6b7280">  → streams PCM ↔ Gemini Live</text>
+  <text x="306" y="412" font-size="10" fill="#6b7280">  → parses EDIT_CMD JSON → Firestore</text>
+  <text x="306" y="427" font-size="10" fill="#374151">WS /ws/voice/companion</text>
+  <text x="306" y="442" font-size="10" fill="#6b7280">  → warm chat · re-summarizes on close</text>
+
+  <line x1="300" y1="452" x2="530" y2="452" stroke="#a7f3d0" stroke-width="1"/>
+
+  <!-- Section: Other -->
+  <text x="306" y="467" font-size="10" font-weight="700" fill="#065f46" letter-spacing="0.5">PROFILES &amp; STATS</text>
+  <text x="306" y="483" font-size="10" fill="#374151">GET /caregivers  · PUT /caregivers/{name}</text>
+  <text x="306" y="498" font-size="10" fill="#374151">GET /voice-reference  · PUT /voice-reference</text>
+  <text x="306" y="513" font-size="10" fill="#374151">GET /stats  — atomic token / cost counters</text>
+  <text x="306" y="528" font-size="10" fill="#374151">write_log()  — structured error / info log</text>
+  <text x="306" y="553" font-size="10" font-style="italic" fill="#10b981">Stateless — scales to zero on Cloud Run</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  BOX 3A — GEMINI 2.5 FLASH (REST)                       -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <rect x="596" y="75" width="248" height="248" fill="white" stroke="#2563eb" stroke-width="2" rx="12" filter="url(#shadow)"/>
+  <rect x="596" y="75"  width="248" height="40" fill="#2563eb" rx="12"/>
+  <rect x="596" y="99"  width="248" height="16" fill="#2563eb"/>
+  <text x="720" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="white">✨  Gemini 2.5 Flash</text>
+  <text x="720" y="114" text-anchor="middle" font-size="10" fill="#bfdbfe">REST API · Multimodal · Non-streaming</text>
+
+  <text x="612" y="138" font-size="10" font-weight="700" fill="#1d4ed8" letter-spacing="0.5">analyze_audio()</text>
+  <text x="612" y="154" font-size="10" fill="#374151">• Audio bytes + system prompt</text>
+  <text x="612" y="169" font-size="10" fill="#374151">• events_today context (dedup guard)</text>
+  <text x="612" y="184" font-size="10" fill="#374151">• Reference clips  (voice + normal-tone)</text>
+  <text x="612" y="199" font-size="10" fill="#374151">• Returns events JSON  (confidence 0–100)</text>
+  <text x="612" y="214" font-size="10" fill="#374151">• Fields: type · detail · timestamp · notable</text>
+  <text x="612" y="229" font-size="10" fill="#374151">• caregiver_hint · audio_signature</text>
+
+  <line x1="606" y1="239" x2="834" y2="239" stroke="#bfdbfe" stroke-width="1"/>
+
+  <text x="612" y="254" font-size="10" font-weight="700" fill="#1d4ed8" letter-spacing="0.5">generate_summary()</text>
+  <text x="612" y="270" font-size="10" fill="#374151">• All day's events → structured JSON</text>
+  <text x="612" y="285" font-size="10" fill="#374151">• Sections: eating · nap · diaper · play</text>
+  <text x="612" y="300" font-size="10" fill="#374151">• milestone · outing · health · tweet</text>
+  <text x="612" y="315" font-size="10" fill="#374151">• Age-specific tips per section</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  BOX 3B — GEMINI LIVE API                               -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <rect x="596" y="344" width="248" height="231" fill="white" stroke="#7c3aed" stroke-width="2" rx="12" filter="url(#shadow)"/>
+  <rect x="596" y="344" width="248" height="40" fill="#7c3aed" rx="12"/>
+  <rect x="596" y="368" width="248" height="16" fill="#7c3aed"/>
+  <text x="720" y="369" text-anchor="middle" font-size="14" font-weight="700" fill="white">🎙️  Gemini Live API</text>
+  <text x="720" y="383" text-anchor="middle" font-size="10" fill="#ddd6fe">Native Audio · Real-time bidirectional</text>
+
+  <text x="612" y="407" font-size="10" font-weight="700" fill="#5b21b6" letter-spacing="0.5">EDIT LOG SESSION</text>
+  <text x="612" y="423" font-size="10" fill="#374151">• PCM audio in ↔ PCM audio out</text>
+  <text x="612" y="438" font-size="10" fill="#374151">• Parses EDIT_CMD JSON from transcript</text>
+  <text x="612" y="453" font-size="10" fill="#374151">• Applies update / delete / add to Firestore</text>
+  <text x="612" y="468" font-size="10" fill="#374151">• Returns refreshed event list on close</text>
+
+  <line x1="606" y1="478" x2="834" y2="478" stroke="#ddd6fe" stroke-width="1"/>
+
+  <text x="612" y="493" font-size="10" font-weight="700" fill="#5b21b6" letter-spacing="0.5">COMPANION SESSION</text>
+  <text x="612" y="509" font-size="10" fill="#374151">• Warm parenting-support conversation</text>
+  <text x="612" y="524" font-size="10" fill="#374151">• Today's summary injected as context</text>
+  <text x="612" y="539" font-size="10" fill="#374151">• Re-generates summary on session close</text>
+  <text x="612" y="554" font-size="10" fill="#374151">• Model: gemini-2.5-flash-native-audio</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  BOX 4 — FIRESTORE                                      -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <rect x="290" y="606" width="554" height="80" fill="white" stroke="#d97706" stroke-width="2" rx="12" filter="url(#shadow)"/>
+  <rect x="290" y="606" width="554" height="32" fill="#f59e0b" rx="12"/>
+  <rect x="290" y="624"  width="554" height="14" fill="#f59e0b"/>
+  <text x="567" y="627" text-anchor="middle" font-size="14" font-weight="700" fill="white">🔥  Firestore  (Firebase / Google Cloud)</text>
+
+  <!-- Four collections -->
+  <text x="320" y="657" font-size="10" font-weight="700" fill="#92400e">days/{date}/</text>
+  <text x="320" y="672" font-size="10" fill="#374151">events/ · summary</text>
+
+  <text x="445" y="657" font-size="10" font-weight="700" fill="#92400e">profiles/{baby}/</text>
+  <text x="445" y="672" font-size="10" fill="#374151">voice_ref · caregivers/</text>
+
+  <text x="590" y="657" font-size="10" font-weight="700" fill="#92400e">meta/session_stats</text>
+  <text x="590" y="672" font-size="10" fill="#374151">tokens · cost_usd (atomic)</text>
+
+  <text x="730" y="657" font-size="10" font-weight="700" fill="#92400e">logs/</text>
+  <text x="730" y="672" font-size="10" fill="#374151">ERROR · INFO entries</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  LEGEND                                                  -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <rect x="860" y="440" width="222" height="116" fill="white" stroke="#e2e8f0" stroke-width="1.5" rx="10" filter="url(#shadow)"/>
+  <text x="876" y="460" font-size="10" font-weight="700" fill="#374151" letter-spacing="0.5">LEGEND</text>
+
+  <line x1="876" y1="475" x2="916" y2="475" stroke="#64748b" stroke-width="2" marker-end="url(#ah-slate)"/>
+  <text x="922" y="479" font-size="9" fill="#374151">HTTP REST  (JSON)</text>
+
+  <line x1="876" y1="495" x2="916" y2="495" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#ah-violet)"/>
+  <text x="922" y="499" font-size="9" fill="#374151">WebSocket  (PCM audio)</text>
+
+  <line x1="876" y1="515" x2="916" y2="515" stroke="#2563eb" stroke-width="2" marker-end="url(#ah-blue)"/>
+  <text x="922" y="519" font-size="9" fill="#374151">Gemini API call</text>
+
+  <line x1="876" y1="535" x2="916" y2="535" stroke="#10b981" stroke-width="2" marker-end="url(#ah-green)"/>
+  <text x="922" y="539" font-size="9" fill="#374151">Polling  (3 s interval)</text>
+
+  <line x1="876" y1="545" x2="916" y2="545" stroke="#d97706" stroke-width="2" marker-end="url(#ah-amber)"/>
+  <text x="922" y="549" font-size="9" fill="#374151">Firestore read / write</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  ARROWS                                                  -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+
+  <!-- 1. Frontend → Backend: POST /analyze  (audio clip, HTTP) -->
+  <path d="M244,158 L290,158" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#ah-slate)"/>
+  <text x="267" y="150" text-anchor="middle" font-size="9" fill="#64748b">audio clip</text>
+
+  <!-- 2. Backend → Frontend: GET /events polling  (events array) -->
+  <path d="M290,272 L244,272" stroke="#10b981" stroke-width="2" fill="none" marker-end="url(#ah-green)"/>
+  <text x="267" y="264" text-anchor="middle" font-size="9" fill="#10b981">events[ ]</text>
+
+  <!-- 3a. Frontend → Backend: WS open (voice) -->
+  <path d="M244,395 L290,395" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-violet)"/>
+  <text x="267" y="388" text-anchor="middle" font-size="9" fill="#7c3aed">PCM audio →</text>
+
+  <!-- 3b. Backend → Frontend: WS reply (audio out + events) -->
+  <path d="M290,412 L244,412" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-violet)"/>
+  <text x="267" y="428" text-anchor="middle" font-size="9" fill="#7c3aed">← audio + edits</text>
+
+  <!-- 4. Backend → Gemini Flash: audio + context -->
+  <path d="M540,158 L596,158" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ah-blue)"/>
+  <text x="568" y="150" text-anchor="middle" font-size="9" fill="#2563eb">audio + ctx</text>
+
+  <!-- 5. Gemini Flash → Backend: events JSON -->
+  <path d="M596,198 L540,198" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ah-blue)"/>
+  <text x="568" y="215" text-anchor="middle" font-size="9" fill="#2563eb">events JSON</text>
+
+  <!-- 6. Backend → Gemini Flash: events → summary -->
+  <path d="M540,310 L596,295" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ah-blue)"/>
+  <text x="565" y="324" text-anchor="middle" font-size="9" fill="#2563eb">all events</text>
+
+  <!-- 7. Gemini Flash → Backend: summary JSON -->
+  <path d="M596,320 L540,328" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ah-blue)"/>
+
+  <!-- 8. Backend ↔ Gemini Live: WS live audio stream -->
+  <path d="M540,405 L596,430" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-violet)"/>
+  <text x="563" y="405" text-anchor="middle" font-size="9" fill="#7c3aed">PCM →</text>
+  <path d="M596,455 L540,438" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-violet)"/>
+  <text x="563" y="468" text-anchor="middle" font-size="9" fill="#7c3aed">← PCM + text</text>
+
+  <!-- 9. Backend → Firestore: read / write events -->
+  <path d="M415,575 L415,606" stroke="#d97706" stroke-width="2" fill="none" marker-end="url(#ah-amber)"/>
+  <path d="M432,606 L432,575" stroke="#d97706" stroke-width="2" fill="none" marker-end="url(#ah-amber)"/>
+  <text x="452" y="594" font-size="9" fill="#d97706">read / write</text>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!--  TECH STACK BADGE (bottom-right)                        -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <rect x="860" y="570" width="222" height="116" fill="white" stroke="#e2e8f0" stroke-width="1.5" rx="10" filter="url(#shadow)"/>
+  <text x="876" y="592" font-size="10" font-weight="700" fill="#374151" letter-spacing="0.5">TECH STACK</text>
+  <text x="876" y="610" font-size="10" fill="#374151">🤖  Gemini 2.5 Flash  +  Live API</text>
+  <text x="876" y="626" font-size="10" fill="#374151">⚡  FastAPI  +  Python asyncio</text>
+  <text x="876" y="642" font-size="10" fill="#374151">🔥  Cloud Firestore  (Firebase)</text>
+  <text x="876" y="658" font-size="10" fill="#374151">☁️   Cloud Run  (serverless)</text>
+  <text x="876" y="674" font-size="10" fill="#374151">📱  PWA  —  zero-install mobile app</text>
+
+</svg>
