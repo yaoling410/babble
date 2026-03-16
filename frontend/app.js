@@ -72,7 +72,7 @@ const MIN_VARIANCE_CLIP_MS = 15000; // only apply variance check to clips ≥ 15
 // (breathing, AC hum) that crossed VAD_THRESHOLD only barely. Not worth sending to Gemini.
 // Missing baby murmuring is acceptable — reducing false positives is the priority.
 const MAX_QUIET_CLIP_MS = 8000;
-const MIN_PEAK_RMS_SHORT_CLIP = 45;
+const MIN_PEAK_RMS_SHORT_CLIP = 30;
 // Clip cache: keep last 20 clips in RAM for voice comparison context
 const MAX_CLIP_CACHE = 20;
 // Minimum confidence for a clip to be considered a confirmed Luca sound (used for cache + voice ref)
@@ -88,9 +88,21 @@ const LOW_FREQ_DOMINANCE = 0.50;
 const POLL_INTERVAL_MS = 3000;
 
 // ─────────────────────────────────────────────────────────────
-// Session token / cost counters (accumulated from /analyze responses)
+// Token / cost counters — seeded from Firestore on load, then incremented locally
 // ─────────────────────────────────────────────────────────────
 const tokenStats = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+
+async function loadInitialStats() {
+  try {
+    const res = await fetch(`${API_BASE}/stats`);
+    if (!res.ok) return;
+    const { stats } = await res.json();
+    tokenStats.inputTokens  = stats.input_tokens  || 0;
+    tokenStats.outputTokens = stats.output_tokens || 0;
+    tokenStats.costUsd      = stats.cost_usd      || 0;
+    updateCostDisplay();
+  } catch (e) { /* non-critical */ }
+}
 
 // ─────────────────────────────────────────────────────────────
 // App state — single source of truth for all runtime data
@@ -149,6 +161,7 @@ const state = {
   voiceCtx: null,          // AudioContext for push-to-talk recording
   voiceProcessor: null,    // ScriptProcessorNode: converts float32 mic → int16 PCM for WS
   voiceStream: null,       // MediaStream for voice overlay mic
+  voiceVolRaf: null,       // requestAnimationFrame handle for voice volume meter
   activeVoiceSession: null, // 'edit' | 'companion' — which overlay is open
 };
 
@@ -244,6 +257,72 @@ function base64ToBlob(b64, mimeType) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Voice segment extraction — trims a blob to [startSec, endSec]
+// using WebAudio and re-encodes as PCM WAV.
+// Falls back to the original blob on any error.
+// WAV is used because Gemini accepts it and OfflineAudioContext
+// cannot re-encode to WebM directly.
+// ─────────────────────────────────────────────────────────────
+function audioBufferToWav(buffer) {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate  = buffer.sampleRate;
+  const numFrames   = buffer.length;
+  const bytesPerSample = 2; // 16-bit PCM
+  const blockAlign  = numChannels * bytesPerSample;
+  const dataBytes   = numFrames * blockAlign;
+  const arrayBuf    = new ArrayBuffer(44 + dataBytes);
+  const view        = new DataView(arrayBuf);
+  const writeStr    = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + dataBytes, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);           // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);          // bits per sample
+  writeStr(36, 'data');
+  view.setUint32(40, dataBytes, true);
+  let off = 44;
+  for (let i = 0; i < numFrames; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+      view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      off += 2;
+    }
+  }
+  return new Blob([arrayBuf], { type: 'audio/wav' });
+}
+
+async function extractAudioSegment(blob, startSec, endSec) {
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+    await tempCtx.close();
+    const sr = audioBuffer.sampleRate;
+    const startSample = Math.max(0, Math.floor(startSec * sr));
+    const endSample   = Math.min(audioBuffer.length, Math.ceil(endSec * sr));
+    const frameCount  = endSample - startSample;
+    if (frameCount <= 0) return blob;
+    const trimmed = new (window.AudioContext || window.webkitAudioContext)()
+      .createBuffer(audioBuffer.numberOfChannels, frameCount, sr);
+    for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+      trimmed.copyToChannel(audioBuffer.getChannelData(ch).subarray(startSample, endSample), ch);
+    }
+    const wavBlob = audioBufferToWav(trimmed);
+    console.log(`[voice-seg] Extracted ${startSec.toFixed(1)}s–${endSec.toFixed(1)}s → ${wavBlob.size}B WAV (was ${blob.size}B)`);
+    return wavBlob;
+  } catch (err) {
+    console.warn('[voice-seg] extractAudioSegment failed, using full clip:', err);
+    return blob;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Screen routing — shows one screen at a time by toggling .active class
 // ─────────────────────────────────────────────────────────────
 function showScreen(id) {
@@ -317,14 +396,51 @@ async function saveVoiceReference() {
   if (statusEl) statusEl.textContent = `✅ Voice reference saved (confidence: ${best.maxConfidence})`;
 }
 
-// downloadClipCache — bundles all cached clips into a single .zip and downloads it.
-// Files are named to indicate Luca detection and include a short content summary.
-// Workflow: run app 10–15 min → click button → move clips from zip to backend/tests/fixtures/
+// buildReferenceNote — mirrors the backend reference_note logic from gemini_client.py.
+// Returns a string describing what reference audio is currently available in state.
+function buildReferenceNote() {
+  const nVoice = state.voiceReferenceBlob ? 1 : 0;
+  const recentHigh = state.clipCache.filter(e => e.hasLucaSound && e.maxConfidence > MIN_CACHE_CONFIDENCE);
+  const nRecent = Math.min(recentHigh.length, 2);
+  const caregiverNames = Object.keys(state.caregiverVoices);
+  const normalNames = Object.keys(state.caregiverNormalTones);
+
+  const parts = [];
+  if (nVoice) parts.push(`${nVoice} permanent voice reference clip(s) of ${state.babyName}`);
+  if (nRecent) parts.push(
+    `${nRecent} recent clip(s) already analyzed and logged ` +
+    `(use for voice comparison AND to refine past events via enriches_event_id if this clip adds context)`
+  );
+  if (caregiverNames.length) parts.push(`voice clips of known caregivers (${caregiverNames.join(', ')})`);
+  if (normalNames.length) parts.push(`normal-tone (adult-to-adult) voice clips of ${normalNames.join(', ')}`);
+
+  return parts.length
+    ? '\nReference audio provided before the current clip: ' + parts.join('; ') + '.'
+    : '';
+}
+
+// downloadClipCache — bundles all cached clips + current ANALYZE_SYSTEM context into a .zip.
+// Includes context.json with events_json, last_clip_summary, and reference_note so the full
+// prompt state can be reproduced offline.
+// Workflow: run app 10–15 min → click button → move clips + context from zip to backend/tests/fixtures/
 async function downloadClipCache() {
   if (state.clipCache.length === 0) {
     alert('No clips cached yet — let the app run for a few minutes first.');
     return;
   }
+
+  // Build context snapshot — everything the ANALYZE_SYSTEM prompt needs at this moment
+  const contextSnapshot = {
+    exported_at: new Date().toISOString(),
+    baby_name: state.babyName,
+    baby_age_months: state.babyAgeMonths,
+    events_json: state.events,
+    last_clip_summary: state.lastClipSummary || '',
+    reference_note: buildReferenceNote(),
+    known_caregivers: Object.keys(state.caregiverVoices),
+  };
+  const contextJson = JSON.stringify(contextSnapshot, null, 2);
+
   if (typeof JSZip === 'undefined') {
     // Fallback if CDN unavailable: sequential downloads with a long stagger
     for (const entry of state.clipCache) {
@@ -340,14 +456,27 @@ async function downloadClipCache() {
       URL.revokeObjectURL(url);
       await new Promise(r => setTimeout(r, 1000));
     }
+    // Download context.json separately in fallback mode
+    const ctxBlob = new Blob([contextJson], { type: 'application/json' });
+    const ctxUrl = URL.createObjectURL(ctxBlob);
+    const ca = document.createElement('a');
+    ca.href = ctxUrl;
+    ca.download = `babble_context_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(ca);
+    ca.click();
+    document.body.removeChild(ca);
+    URL.revokeObjectURL(ctxUrl);
     return;
   }
+
   const zip = new JSZip();
   for (const entry of state.clipCache) {
     const label = entry.hasLucaSound ? `luca_conf${entry.maxConfidence}` : 'no_luca';
     const summary = entry.summary ? `_${entry.summary}` : '';
     zip.file(`${label}${summary}_${entry.id}.webm`, entry.blob);
   }
+  zip.file('context.json', contextJson);
+
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(zipBlob);
   const a = document.createElement('a');
@@ -698,6 +827,10 @@ document.getElementById('settings-save').addEventListener('click', () => {
   closeSettings();
 });
 document.getElementById('settings-close').addEventListener('click', closeSettings);
+document.getElementById('settings-logout').addEventListener('click', () => {
+  localStorage.clear();
+  location.reload();
+});
 
 // ─────────────────────────────────────────────────────────────
 // Navigation between screens
@@ -769,6 +902,7 @@ async function acquireWakeLock() {
 // ─────────────────────────────────────────────────────────────
 async function startMonitoring() {
   await acquireWakeLock();
+  loadInitialStats();   // seed token counter from Firestore accumulated totals
   startEventPolling(); // begin polling /events every 3s
   loadYesterdaySummary(); // show previous day's tweet on home screen
   scheduleMidnightReset(); // auto-clear log and refresh yesterday card at midnight
@@ -1013,7 +1147,7 @@ function onRecordingStop() {
   if (state.clipCache.length > MAX_CLIP_CACHE) state.clipCache.shift(); // drop oldest
   persistClipEntry(cacheEntry0); // persist to IDB
 
-  enqueueClip(blob, cacheId); // passed all checks → queue for Gemini
+  enqueueClip(blob, cacheId, durationMs); // passed all checks → queue for Gemini
 }
 
 // resetSilenceTimer — restarts the countdown to stop recording.
@@ -1068,8 +1202,8 @@ function updateListeningStatus(text, ok) {
 // ─────────────────────────────────────────────────────────────
 
 // enqueueClip — adds a {blob, cacheId} tuple to the queue and tries to send immediately
-function enqueueClip(blob, cacheId) {
-  state.sendQueue.push({ blob, cacheId });
+function enqueueClip(blob, cacheId, durationMs) {
+  state.sendQueue.push({ blob, cacheId, durationMs });
   drainQueue(); // attempt to send (no-op if already sending)
 }
 
@@ -1077,9 +1211,9 @@ function enqueueClip(blob, cacheId) {
 async function drainQueue() {
   if (state.isSending || state.sendQueue.length === 0) return; // busy or empty
   state.isSending = true;
-  const { blob, cacheId } = state.sendQueue.shift(); // take the oldest clip (FIFO)
+  const { blob, cacheId, durationMs } = state.sendQueue.shift(); // take the oldest clip (FIFO)
   try {
-    await sendClip(blob, cacheId);
+    await sendClip(blob, cacheId, durationMs);
   } catch (err) {
     console.error('Analyze error:', err);
   } finally {
@@ -1092,7 +1226,7 @@ async function drainQueue() {
 // cacheId: the id of this clip in state.clipCache — used to mark it after Gemini responds.
 // The backend decodes the audio, calls Gemini 2.5 Flash, and returns detected events.
 // Also updates the token/cost display and appends a debug log entry with an audio link.
-async function sendClip(blob, cacheId) {
+async function sendClip(blob, cacheId, durationMs = 0) {
   // Create a playable URL for this clip (for debug log)
   const audioUrl = URL.createObjectURL(blob);
   const clipTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1128,6 +1262,7 @@ async function sendClip(blob, cacheId) {
       audio_base64: await blobToBase64(caregiverBlob),
       type: 'caregiver',
       label: name,
+      mime_type: caregiverBlob.type || 'audio/webm',
     });
   }
 
@@ -1139,6 +1274,7 @@ async function sendClip(blob, cacheId) {
       audio_base64: await blobToBase64(normalBlob),
       type: 'caregiver_normal',
       label: name,
+      mime_type: normalBlob.type || 'audio/webm',
     });
   }
 
@@ -1151,6 +1287,7 @@ async function sendClip(blob, cacheId) {
     baby_name: state.babyName,
     baby_age_months: state.babyAgeMonths,
     timestamp: nowISO(),
+    clip_duration_sec: durationMs / 1000,
     context: {
       events_today: state.events,
       last_clip_summary: state.lastClipSummary,
@@ -1224,12 +1361,18 @@ async function sendClip(blob, cacheId) {
     if (state.caregiverVoices[name]) continue; // already confirmed
     state.caregiverPending[name] = (state.caregiverPending[name] || 0) + 1;
     if (state.caregiverPending[name] >= 2) {
-      // Confirmed — save this clip as their voice reference
-      state.caregiverVoices[name] = blob;
-      await saveCaregiverClip(name, blob);
+      // Confirmed — extract the caregiver's voice segment if Gemini returned timestamps
+      const seg = (data.raw_events || [])
+        .find(e => e.caregiver_hint === name && e.caregiver_voice_segment)
+        ?.caregiver_voice_segment;
+      const voiceBlob = seg
+        ? await extractAudioSegment(blob, seg.start_sec, seg.end_sec)
+        : blob;
+      state.caregiverVoices[name] = voiceBlob;
+      await saveCaregiverClip(name, voiceBlob);
       delete state.caregiverPending[name];
       // Sync to Firestore so caregiver survives browser clear
-      syncCaregiverToBackend(name, blob, state.caregiverNormalTones[name] || null);
+      syncCaregiverToBackend(name, voiceBlob, state.caregiverNormalTones[name] || null);
       const statusEl = document.getElementById('voice-profile-status');
       if (statusEl) statusEl.textContent = `🧑 Caregiver confirmed: ${name}`;
       console.log(`[caregiver] Confirmed: ${name} (2+ clips)`);
@@ -1271,9 +1414,15 @@ async function sendClip(blob, cacheId) {
       if (hintedMom || Object.keys(state.caregiverVoices).length === 0) {
         const caregiverName = 'mom';
         if (!state.caregiverVoices[caregiverName] || maxConf > (state.caregiverVoices[caregiverName]?.conf || 0)) {
-          state.caregiverVoices[caregiverName] = blob;
-          // store a small wrapper so we can keep confidence if needed later
-          try { await saveCaregiverClip(caregiverName, blob); } catch (e) { console.error(e); }
+          // Extract mom's voice segment if Gemini provided timestamps
+          const momSeg = (data.raw_events || [])
+            .find(e => (e.caregiver_hint === 'mom' || e.caregiver_hint === 'mother') && e.caregiver_voice_segment)
+            ?.caregiver_voice_segment;
+          const momVoiceBlob = momSeg
+            ? await extractAudioSegment(blob, momSeg.start_sec, momSeg.end_sec)
+            : blob;
+          state.caregiverVoices[caregiverName] = momVoiceBlob;
+          try { await saveCaregiverClip(caregiverName, momVoiceBlob); } catch (e) { console.error(e); }
           const statusEl = document.getElementById('voice-profile-status');
           if (statusEl) statusEl.textContent = `🧑 Caregiver saved: ${caregiverName} (conf ${maxConf})`;
           console.log(`[caregiver] Auto-saved caregiver '${caregiverName}' (conf ${maxConf})`);
@@ -1300,7 +1449,7 @@ async function sendClip(blob, cacheId) {
       }
     }
     pollEvents(); // still fire (non-blocking) to sync UI + pick up any server-side enrichments
-    state.lastClipSummary = data.events.map(e => e.detail).join('; ');
+    state.lastClipSummary = data.events.map(e => `[${e.timestamp}] ${e.detail}`).join('; ');
   }
 }
 
@@ -1331,10 +1480,14 @@ function appendDebugEntry(time, kb, audioUrl, rawEvents, filteredEvents) {
     eventsHtml = '<span style="opacity:0.6">No events detected</span>';
   } else {
     eventsHtml = rawEvents.map(e => {
-      const kept = filteredEvents.some(f => f.type === e.type && f.detail === e.detail);
+      const etype  = e.event_type;
+      const detail = e.new_logging_detail || e.past_content_detail || '';
+      const kept = filteredEvents.some(f => f.event_type === etype && (f.new_logging_detail || f.past_content_detail || '') === detail);
       const icon = kept ? '✅' : '❌';
       const style = kept ? '' : 'opacity:0.5;text-decoration:line-through;';
-      return `<div style="${style}">${icon} [${e.type}] conf:${e.confidence} — ${escHtml(e.detail || '')}</div>`;
+      const newLog = e.new_logging ? '[CURRENT]' : '[CONTEXT]';
+      const src = e.evidence_source ? `[${e.evidence_source}]` : '';
+      return `<div style="${style}">${icon} [${etype}] ${newLog} ${src} conf:${e.confidence} — ${escHtml(detail)}</div>`;
     }).join('');
   }
 
@@ -1753,6 +1906,8 @@ async function connectVoiceSession(endpoint, transcriptId) {
       baby_name: state.babyName,
       baby_age_months: state.babyAgeMonths,
       date: todayISO(),
+      local_now: new Date().toISOString(),
+      tz_offset_minutes: -new Date().getTimezoneOffset(),
     }));
   };
 
@@ -1763,7 +1918,17 @@ async function connectVoiceSession(endpoint, transcriptId) {
     } else {
       // Text message = JSON control message
       const msg = JSON.parse(event.data);
-      if (msg.type === 'transcript' && msg.role === 'gemini') {
+      if (msg.type === 'transcript' && msg.role === 'user') {
+        // Replace the "🎤 Speaking..." placeholder with the real transcription
+        const placeholder = document.getElementById('voice-user-speaking');
+        if (placeholder) {
+          placeholder.textContent = msg.text;
+          placeholder.style.opacity = '';
+          placeholder.removeAttribute('id'); // allow multiple user turns
+        } else {
+          addTranscript(transcriptId, 'user', msg.text);
+        }
+      } else if (msg.type === 'transcript' && msg.role === 'gemini') {
         document.getElementById('voice-thinking')?.remove(); // clear thinking placeholder
         addTranscript(transcriptId, 'gemini', msg.text);
       } else if (msg.type === 'edit_applied') {
@@ -1816,7 +1981,30 @@ async function voiceHoldStart(session) {
   if (!state.voiceWs || state.voiceWs.readyState !== WebSocket.OPEN) return;
 
   const transcriptId = session === 'edit' ? 'edit-log-transcript' : 'companion-transcript';
-  addTranscript(transcriptId, 'user', '🎤 Speaking...');
+  const volWrapId   = session === 'edit' ? 'voice-vol-edit'      : 'voice-vol-companion';
+  const btnId       = session === 'edit' ? 'btn-hold-edit'       : 'btn-hold-companion';
+
+  // Add a placeholder that will be replaced by the real transcript when Gemini returns it
+  const container = document.getElementById(transcriptId);
+  if (container) {
+    const placeholder = document.createElement('div');
+    placeholder.id = 'voice-user-speaking';
+    placeholder.className = 'transcript-msg user';
+    placeholder.style.opacity = '0.55';
+    placeholder.textContent = '🎤 Speaking...';
+    container.appendChild(placeholder);
+    container.scrollTop = container.scrollHeight;
+  }
+  document.getElementById(btnId)?.classList.add('held');
+
+  // Unlock / resume the playback AudioContext inside this user gesture.
+  // Browsers suspend AudioContext created outside a user tap — doing it here
+  // ensures Gemini's audio reply will actually play.
+  if (!playbackCtx) {
+    playbackCtx = new AudioContext();
+  } else if (playbackCtx.state === 'suspended') {
+    await playbackCtx.resume();
+  }
 
   try {
     // Request mic at exactly 16kHz mono — required by Gemini Live API
@@ -1833,14 +2021,64 @@ async function voiceHoldStart(session) {
     // Then convert to Int16 (PCM 16-bit) which is what Gemini Live expects
     const ctx = new AudioContext({ sampleRate: 16000 });
     const source = ctx.createMediaStreamSource(state.voiceStream);
+
+    // ── Waveform visualizer ───────────────────────────────────
+    // Uses AnalyserNode frequency data to draw animated bars on canvas.
+    // Shown only while holding; hidden on release.
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 128; // 64 frequency bins — enough for bar chart
+    analyser.smoothingTimeConstant = 0.75; // smooth transitions between frames
+    const freqBuf = new Uint8Array(analyser.frequencyBinCount); // 64 bins
+    source.connect(analyser);
+
+    const canvas = document.getElementById(volWrapId);
+    if (canvas) canvas.style.display = '';
+    const canvasCtx = canvas ? canvas.getContext('2d') : null;
+
+    function drawVolBars() {
+      state.voiceVolRaf = requestAnimationFrame(drawVolBars);
+      if (!canvasCtx) return;
+      analyser.getByteFrequencyData(freqBuf);
+
+      const W = canvas.offsetWidth || canvas.width;
+      const H = canvas.height;
+      canvas.width = W; // sync pixel width to layout width
+      canvasCtx.clearRect(0, 0, W, H);
+
+      // Draw 28 evenly-spaced bars using the lower 40 frequency bins (voice range)
+      const numBars = 28;
+      const useBins = 40; // bins 0–39 cover ~0–5kHz — the vocal range
+      const barW = Math.floor((W - numBars * 2) / numBars);
+      const gap = 2;
+
+      for (let i = 0; i < numBars; i++) {
+        const binIdx = Math.floor((i / numBars) * useBins);
+        const value = freqBuf[binIdx] / 255; // 0–1
+        const barH = Math.max(3, value * H * 0.92);
+        const x = i * (barW + gap);
+        const y = (H - barH) / 2; // center bars vertically
+
+        // Gradient: sage green at low volume, coral at high
+        const r = Math.round(122 + (224 - 122) * value);
+        const g = Math.round(170 + (112 - 170) * value);
+        const b = Math.round(138 + (96  - 138) * value);
+        canvasCtx.fillStyle = `rgb(${r},${g},${b})`;
+        canvasCtx.beginPath();
+        canvasCtx.roundRect(x, y, barW, barH, 3);
+        canvasCtx.fill();
+      }
+    }
+    drawVolBars();
+    // ─────────────────────────────────────────────────────────
+
     const processor = ctx.createScriptProcessor(4096, 1, 1); // 4096 sample buffer
 
+    // Buffer PCM chunks while button is held; flush to WebSocket on release.
+    state.voicePcmBuffer = [];
     processor.onaudioprocess = (e) => {
       const float32 = e.inputBuffer.getChannelData(0); // float32 samples in [-1, 1]
       const int16 = float32ToInt16(float32);           // convert to int16 PCM
-      if (state.voiceWs && state.voiceWs.readyState === WebSocket.OPEN) {
-        state.voiceWs.send(int16.buffer); // send raw PCM bytes over WebSocket
-      }
+      state.voicePcmBuffer.push(int16.buffer.slice(0)); // buffer — don't send yet
     };
 
     source.connect(processor);
@@ -1854,7 +2092,17 @@ async function voiceHoldStart(session) {
 
 // voiceHoldEnd — called on mouseup/touchend to stop push-to-talk
 function voiceHoldEnd(session) {
+  // Flush all buffered PCM chunks to Gemini, then signal end-of-turn.
+  const ws = state.voiceWs;
+  const buf = state.voicePcmBuffer || [];
   stopVoiceRecording();
+  if (ws?.readyState === WebSocket.OPEN) {
+    for (const chunk of buf) {
+      ws.send(chunk); // send each buffered PCM chunk in order
+    }
+    ws.send(JSON.stringify({ type: 'activity_end' }));
+  }
+  state.voicePcmBuffer = [];
   // Show a "thinking" placeholder — removed when the first Gemini response token arrives
   const transcriptId = session === 'edit' ? 'edit-log-transcript' : 'companion-transcript';
   const container = document.getElementById(transcriptId);
@@ -1870,6 +2118,25 @@ function voiceHoldEnd(session) {
 
 // stopVoiceRecording — disconnects audio processing nodes and releases mic
 function stopVoiceRecording() {
+  // Cancel volume meter animation and hide canvas
+  if (state.voiceVolRaf) {
+    cancelAnimationFrame(state.voiceVolRaf);
+    state.voiceVolRaf = null;
+  }
+  ['voice-vol-edit', 'voice-vol-companion'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = 'none';
+    // Clear canvas so it's blank next time it appears
+    const c = el.getContext?.('2d');
+    if (c) c.clearRect(0, 0, el.width, el.height);
+  });
+  // Remove held state from buttons
+  document.getElementById('btn-hold-edit')?.classList.remove('held');
+  document.getElementById('btn-hold-companion')?.classList.remove('held');
+
+  state.voicePcmBuffer = []; // discard any buffered audio (e.g. closed mid-hold)
+
   if (state.voiceProcessor) {
     state.voiceProcessor.disconnect();
     state.voiceProcessor = null;
@@ -1921,7 +2188,8 @@ async function drainAudioQueue() {
   isPlaying = true;
   const ab = audioQueue.shift();
 
-  if (!playbackCtx) playbackCtx = new AudioContext();
+  if (!playbackCtx) playbackCtx = new AudioContext(); // fallback for desktop (no autoplay restriction)
+  if (playbackCtx.state === 'suspended') await playbackCtx.resume();
   try {
     // Wrap raw PCM in a WAV container so decodeAudioData can decode it
     const wavAb = pcm16ToWav(new Int16Array(ab), 24000); // Gemini outputs 24kHz
@@ -1981,19 +2249,28 @@ function pcm16ToWav(samples, sampleRate) {
 
 async function loadYesterdaySummary() {
   const card = document.getElementById('yesterday-summary-card');
-  const tweetEl = document.getElementById('yesterday-tweet');
-  if (!card || !tweetEl) return;
+  const tipsEl = document.getElementById('yesterday-tips');
+  if (!card || !tipsEl) return;
   try {
     const res = await fetch(`${API_BASE}/summary?date=${yesterdayISO()}`);
     if (!res.ok) { card.style.display = 'none'; return; }
     const data = await res.json();
-    const tweet = data.summary?.social_tweet;
-    if (tweet) {
-      tweetEl.textContent = `"${tweet}"`;
-      card.style.display = 'block';
+    const summary = data.summary;
+    if (!summary) { card.style.display = 'none'; return; }
+    // Show tagline if set, otherwise fall back to 2 tips from structured sections
+    if (summary.tagline) {
+      tipsEl.innerHTML = `<div style="font-style:italic;">${escHtml(summary.tagline)}</div>`;
     } else {
-      card.style.display = 'none';
+      const s = summary.structured;
+      if (!s) { card.style.display = 'none'; return; }
+      const tips = [
+        s.eating?.tip, s.nap?.tip, s.play_mood?.tip,
+        s.milestone?.tip, s.diaper?.tip, s.health?.tip, s.outing?.tip,
+      ].filter(Boolean).slice(0, 2);
+      if (tips.length === 0) { card.style.display = 'none'; return; }
+      tipsEl.innerHTML = tips.map(t => `<div>• ${escHtml(t)}</div>`).join('');
     }
+    card.style.display = 'block';
   } catch {
     card.style.display = 'none';
   }
