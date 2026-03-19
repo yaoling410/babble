@@ -60,10 +60,21 @@ def _is_vague_babble(event: dict) -> bool:
 
     These get a stricter confidence threshold (≥80) to reduce noise.
     """
-    if event.get("new_logging_type") != "activity":
+    if event.get("event_type") != "activity":
         return False
     detail = (event.get("new_logging_detail") or "").lower()
     return any(t in detail for t in ("babbl", "coo", "vocaliz"))
+
+
+def _confidence_threshold(event: dict, clip_duration_sec: float | None) -> int:
+    """Return the minimum confidence required to keep this event."""
+    if clip_duration_sec is not None and clip_duration_sec < 5.0:
+        return 90  # short clips: raise bar across the board
+    if event.get("evidence_source") == "baby_voice":
+        return 85  # baby voice only — higher bar to avoid background noise false positives
+    if _is_vague_babble(event):
+        return 80  # vague babble activity: elevated threshold
+    return 70      # caregiver_speech / both / standard
 
 
 def _parse_json_response(text: str) -> any:
@@ -76,77 +87,101 @@ def _parse_json_response(text: str) -> any:
 
 
 ANALYZE_SYSTEM = """You are a baby monitor for {baby_name}, age {baby_age_months} months.
+Current clip timestamp: {clip_timestamp}
 Today's events so far: {events_json}
 Previous clip summary: "{last_clip_summary}"{reference_note}
 
-WHAT TO CAPTURE:
-Include only audio relevant to {baby_name}: speech addressing or mentioning the baby,
-{baby_name}'s own sounds (crying, babbling, words), caregiver reactions to baby behavior.
-If normal-tone reference clips are provided, a shift to higher pitch / slower pace / sing-song
-intonation means the caregiver is talking to {baby_name} even without saying the name.
-Ignore adult conversation unrelated to the baby, background TV/music/traffic.
+══ STEP 1: IS THIS CLIP WORTH LOGGING? ═════════════════════════════
 
-SKIP (no value):
-- Caregiver calling the name with no response and no action following
-- Pure adult logistics ("let's go to the kitchen") with no baby involvement
-- Soft/generic vocalizations with no caregiver reaction ("Luca made a sound")
-- Single proto-words ("da", "ba") unless caregiver reacted as if it were a milestone
-- Ambient tonal sounds (chimes, bells, music) with no human vocal source
-- Caregiver response already implied by a logged baby event
+Log an event only if the clip contains one of:
+  A. {baby_name}'s own sounds — crying, babbling, words, laughter
+  B. Caregiver speech to or about {baby_name} — commands, reactions, corrections
+  C. Caregiver performing care on {baby_name} — diaper, feeding, bathing, dressing
+     Caregiver care speech is ALWAYS worth logging even without baby sounds.
+     "let's change the diaper" · "let's change diaper" · "oh it's wet" → diaper event
+     No baby name required — care actions are by definition about {baby_name}.
 
-SOURCE — required on every event, controls how it is stored:
-  "new_audio"    — you can directly hear the evidence in THIS clip only
-  "past_context" — you are inferring from reference clips, events_today, or last_clip_summary, or if you could using the current clip to enrich the past event. 
+Always ignore: background TV · music · traffic · adult conversation with no baby involvement.
+If normal-tone reference clips are provided, parentese (higher pitch, slower pace, sing-song)
+means the caregiver is addressing {baby_name} even without saying the name.
 
-  new_audio  → creates a new log entry
-  past_context → updates the most recent matching event instead
+Only skip:
+  - Name called with nothing following ("Luca?" then silence)
+  - Vague baby sound with no caregiver reaction
+  - Single proto-words ("da", "ba") unless caregiver reacted as a milestone
 
-  ✓ new_audio:    "don't bite" heard NOW · baby cries audibly · "want some food?" said in clip
-  ✗ past_context: clip continues an activity already in events_today with no new evidence
-  ✗ past_context: inferring from reference audio that something is still ongoing
-  When in doubt → "past_context"
+══ STEP 2: WHICH EVENT TYPE? ═══════════════════════════════════════
 
-EVENT TYPES:
-- feeding: food/drink, quantity, reaction
-- nap: fell asleep / woke / duration
-- cry: crying or mention of crying, reason if known
-- diaper: check or change — smell, wetness, soiling
-- outing: location, who went, what happened
-- health_note: rash, fever, medicine, doctor
-- activity: anything {baby_name} was actively doing — babbling, walking, laughing, biting, throwing, exploring
-  (skip soft background babbling with no reaction)
-- new_food: first time eating something
-- milestone: first word/step/skill — set notable:true if remarkable for {baby_age_months} months
-- observation: corrections, repeated behaviors, mood, personality
+feeding     — food/drink offered or consumed; quantity, reaction
+nap         — fell asleep / woke / duration
+cry         — audible crying or mention of it; reason if known
+diaper      — any check or change; includes dry checks ("seems dry, let's keep it")
+              infer entirely from caregiver speech — no baby sounds needed
+outing      — location, who went, what happened
+health_note — rash, fever, medicine, doctor
+activity    — {baby_name} actively doing something: walking, laughing, biting, throwing, exploring
+              (skip soft background babbling with no caregiver reaction)
+new_food    — first time eating something new
+milestone   — first word/step/skill; set notable:true if remarkable for {baby_age_months} months
+observation — corrections, repeated behaviors, mood, personality
 
-Read caregiver speech as evidence: commands reveal behavior, questions reveal discoveries,
-exclamations reveal milestones. Count repeated incidents.
+══ STEP 3: NEW EVENT OR ENRICHMENT? ════════════════════════════════
 
-STYLE: Warm, vivid, present-tense — as if telling a family member.
-Bad: "Luca laughed." → Good: "{baby_name} burst into giggles when Mom made funny faces!"
-Use the caregiver's actual name/role in detail text, not the word "Caregiver".
-If you hear a genuine role ("daddy's here", "come to mommy") set caregiver_hint.{known_note}
+new_logging: TRUE  [CURRENT CLIP] — evidence is directly heard in THIS clip right now
+  → Always TRUE for caregiver care actions (diaper/feeding/bathing) heard in this clip
+  → TRUE for any baby sound heard in this clip
+  → TRUE for any new information not yet in events_today
 
-Return JSON array ([] if nothing detected). Each item:
+new_logging: FALSE [CONTEXT] — inferred from reference clips / events_today / last_clip_summary
+  → Clip only continues an already-logged event with no new facts
+  → Caregiver refers to something that happened earlier ("he bit earlier")
+  → Inference from reference audio about something still ongoing
+
+══ OUTPUT FORMAT ════════════════════════════════════════════════════
+
+STYLE: Warm, vivid, present-tense. Use caregiver's role/name, never "Caregiver".
+If you hear a role name ("daddy's here", "come to mommy") set caregiver_hint.{known_note}
+
+Return JSON array ([] if nothing detected).
+
+── PATH A: new_logging = true ───────────────────────────────────────
 {{
   "new_logging": true,
-  "new_logging_type": "feeding|nap|cry|diaper|outing|health_note|activity|new_food|milestone|observation",
-  "new_logging_timestamp": "<ISO 8601 if new_logging:true, else null>",
-  "new_logging_detail": "<warm vivid description if new_logging:true, else null>",
+  "event_type": "feeding|nap|cry|diaper|outing|health_note|activity|new_food|milestone|observation",
+  "new_logging_timestamp": "<ISO 8601>",
+  "new_logging_detail": "<warm vivid description>",
   "confidence": 0-100,
   "notable": false,
-  "past_content_id": "<ID of existing event to enrich if new_logging:false, else null>",
-  "past_content_detail": "<detail to merge into past event if new_logging:false, else null>",
-  "caregiver_hint": "<role/name from spoken words — 'daddy', 'mommy' — or null>",
-  "caregiver_audio_signature": "<caregiver name matched by voice against reference clips, or null>"
+  "evidence_source": "baby_voice|caregiver_speech|both",
+  "caregiver_hint": "<role/name from spoken words, or null>",
+  "caregiver_voice_match": "<caregiver name matched by voice, or null>",
+  "caregiver_voice_segment": {{"start_sec": 0.0, "end_sec": 0.0}},
+  "past_content_id": null,
+  "past_content_detail": null
 }}
 
-- new_logging:true  → new_logging_type + new_logging_timestamp + new_logging_detail required
-- new_logging:false → new_logging_type + past_content_detail required;
-                      set past_content_id if you can identify which event, else null (backend will find it)
-- caregiver_hint: derived from spoken words only
-- caregiver_audio_signature: derived from voice-matching reference clips only
-- Only include events with confidence >= 70"""
+── PATH B: new_logging = false ──────────────────────────────────────
+{{
+  "new_logging": false,
+  "event_type": "feeding|nap|cry|diaper|outing|health_note|activity|new_food|milestone|observation",
+  "new_logging_timestamp": null,
+  "new_logging_detail": null,
+  "confidence": 0-100,
+  "notable": false,
+  "evidence_source": "baby_voice|caregiver_speech|both",
+  "caregiver_hint": null,
+  "caregiver_voice_match": null,
+  "caregiver_voice_segment": null,
+  "past_content_id": "<ID of event to update, or null — backend will find it>",
+  "past_content_detail": "<detail to merge into existing event>"
+}}
+
+RULES:
+- evidence_source: "baby_voice" = {baby_name}'s sounds only · "caregiver_speech" = caregiver words only · "both" = both
+- PATH A requires: event_type + new_logging_timestamp + new_logging_detail
+- PATH B requires: event_type + past_content_detail
+- caregiver_voice_segment: {{start_sec, end_sec}} when caregiver_voice_match is non-null; else null
+- Confidence minimums: caregiver_speech events ≥ 70 · baby_voice events ≥ 85 · baby_voice in clips < 5s ≥ 90"""
 
 SUMMARY_PROMPT = """Baby: {baby_name}, age {baby_age_months} months.
 Today's events (JSON): {events_json}
@@ -163,12 +198,12 @@ Generate a day summary. Return JSON with exactly these keys:
       "bullets": ["<Water/Breakfast/Lunch/Dinner/Snack · brief log, note if self-fed>"],
       "milk": {{"type": "formula|breast_milk|whole_milk|unknown", "amount": "<or null>"}},
       "new_food": "<first-time food name, or null>",
-      "tip": "<warm, specific feeding insight for {baby_age_months} months>"
+      "tip": "<one sentence feeding insight for {baby_age_months} months>"
     }},
 
     "nap": {{
       "bullets": ["<start time · duration · fell asleep independently or assisted>"],
-      "tip": "<sleep insight for {baby_age_months} months>"
+      "tip": "<one sentence sleep insight for {baby_age_months} months>"
     }},
 
     "diaper": {{
@@ -177,27 +212,27 @@ Generate a day summary. Return JSON with exactly these keys:
       "color": "<if mentioned, or null>",
       "consistency": "<if mentioned, or null>",
       "uncertain": <true if inferred from speech>,
-      "tip": "<digestion tip for {baby_age_months} months>"
+      "tip": "<one sentence digestion tip for {baby_age_months} months>"
     }},
 
     "play_mood": {{
       "bullets": ["<log entry>"],
-      "tip": "<development insight for {baby_age_months} months>"
+      "tip": "<one sentence development insight for {baby_age_months} months>"
     }},
 
     "milestone": {{
       "bullet": "<what happened · time>",
-      "tip": "<where this fits in typical {baby_age_months}-month development>"
+      "tip": "<one sentence on where this fits in typical {baby_age_months}-month development>"
     }},
 
     "outing": {{
       "bullets": ["<where · how reacted · new sensory experiences>"],
-      "tip": "<insight on exploration at this age>"
+      "tip": "<one sentence insight on exploration at this age>"
     }},
 
     "health": {{
       "bullets": ["<symptom/fever temp · medication name+dose+time · vaccine/doctor visit>"],
-      "tip": "<health insight relevant to what happened>"
+      "tip": "<one sentence health insight relevant to what happened>"
     }}
   }},
   "narrative": "<2-3 warm sentences for family sharing>",
@@ -219,7 +254,7 @@ STRUCTURED rules:
 - outing bullets: max 2. New environments, people, sensory firsts are worth capturing.
 - health bullets: max 3. Fever temp, medication name+dose+time, vaccine date — these
   matter at the next doctor visit and for long-term health records.
-- All tips: warm, positive, specific to what actually happened — not generic advice.
+- All tips: one sentence only. A calm, factual observation tied specifically to what happened — not a textbook developmental milestone everyone knows. No "try", "consider", "make sure", "you should". Avoid obvious statements like "babies respond to their name" or "toddlers explore boundaries". Pick something specific and less obvious about this age or this behavior.
 - Bullet style: concise log. Use · between sub-info. Times only for milestones.
 
 SOCIAL_TWEET rules — written as {baby_name}, first-person, max 240 chars, end #Babble:
@@ -249,6 +284,7 @@ async def analyze_audio(
     clip_timestamp: str,
     reference_clips: list[dict] = [],  # [{bytes, type: 'voice_reference'|'recent'|'caregiver', label?}]
     known_caregivers: list[str] = [],  # confirmed caregiver names e.g. ["daddy", "mommy"]
+    clip_duration_sec: float | None = None,
 ) -> tuple[list[dict], dict, list[dict]]:
     """
     Send an audio clip to Gemini 2.5 Flash for event extraction.
@@ -290,14 +326,16 @@ async def analyze_audio(
     system_prompt = ANALYZE_SYSTEM.format(
         baby_name=baby_name,
         baby_age_months=baby_age_months,
+        clip_timestamp=clip_timestamp,
         events_json=json.dumps(events_today, default=str),
         last_clip_summary=last_clip_summary or "none",
         reference_note=reference_note,
         known_note=known_note,
     )
 
+    duration_note = f" Clip duration: {clip_duration_sec:.1f}s." if clip_duration_sec is not None else ""
     prompt = (
-        f"Audio clip recorded at {clip_timestamp}. "
+        f"Audio clip recorded at {clip_timestamp}.{duration_note} "
         "Analyze this audio and return the JSON event array as instructed."
     )
 
@@ -309,7 +347,7 @@ async def analyze_audio(
     normal_refs = [r for r in reference_clips if r.get("type") == "caregiver_normal"]
 
     for r in voice_refs:
-        contents.append(types.Part.from_bytes(data=r["bytes"], mime_type="audio/webm"))
+        contents.append(types.Part.from_bytes(data=r["bytes"], mime_type=r.get("mime_type", "audio/webm")))
     if voice_refs:
         contents.append(types.Part.from_text(
             text=f"Above: {baby_name}'s permanent voice reference — their most characteristic sounds. "
@@ -317,7 +355,7 @@ async def analyze_audio(
         ))
 
     for r in recent_refs:
-        contents.append(types.Part.from_bytes(data=r["bytes"], mime_type="audio/webm"))
+        contents.append(types.Part.from_bytes(data=r["bytes"], mime_type=r.get("mime_type", "audio/webm")))
     if recent_refs:
         contents.append(types.Part.from_text(
             text=(
@@ -330,17 +368,17 @@ async def analyze_audio(
         ))
 
     for r in caregiver_refs:
-        contents.append(types.Part.from_bytes(data=r["bytes"], mime_type="audio/webm"))
+        contents.append(types.Part.from_bytes(data=r["bytes"], mime_type=r.get("mime_type", "audio/webm")))
     if caregiver_refs:
         names = ", ".join(r.get("label", "?") for r in caregiver_refs)
         contents.append(types.Part.from_text(
             text=f"Above: voice clips of known caregivers ({names}). "
                  f"Match the speaker in the clip below to one of these names if possible "
-                 f"and set caregiver_hint accordingly."
+                 f"and set caregiver_voice_match accordingly."
         ))
 
     for r in normal_refs:
-        contents.append(types.Part.from_bytes(data=r["bytes"], mime_type="audio/webm"))
+        contents.append(types.Part.from_bytes(data=r["bytes"], mime_type=r.get("mime_type", "audio/webm")))
     if normal_refs:
         names = ", ".join(r.get("label", "?") for r in normal_refs)
         contents.append(types.Part.from_text(
@@ -380,7 +418,7 @@ async def analyze_audio(
     # Drop events missing required fields — these would cause Firestore write errors
     events = [
         e for e in events
-        if e.get("new_logging_type") in _VALID_EVENT_TYPES
+        if e.get("event_type") in _VALID_EVENT_TYPES
         and (
             # new_logging:true requires timestamp + detail
             (e.get("new_logging") and e.get("new_logging_timestamp") and e.get("new_logging_detail"))
@@ -393,10 +431,10 @@ async def analyze_audio(
     # cannot mutate the raw_events dicts (shallow copy shares references).
     raw_events = [dict(e) for e in events]
 
-    # Filter by confidence; apply stricter threshold for vague babbling/cooing activity events
+    # Filter by confidence; short clips and vague babble get a stricter threshold
     events = [
         e for e in events
-        if e.get("confidence", 0) >= (80 if _is_vague_babble(e) else 70)
+        if e.get("confidence", 0) >= _confidence_threshold(e, clip_duration_sec)
     ]
     return events, usage, raw_events
 

@@ -362,8 +362,10 @@
       flex: 1;
       user-select: none;
       -webkit-user-select: none;
+      transition: background 0.1s, transform 0.1s;
     }
-    .btn-hold:active, .btn-hold.held { background: var(--coral); }
+    .btn-hold:active, .btn-hold.held { background: var(--coral); transform: scale(0.97); }
+
 
     /* ── Social card screen ── */
     .social-card {
@@ -456,7 +458,7 @@
       </div>
 
       <!-- Debug clip log: shows each audio clip sent to Gemini + result -->
-      <details id="debug-panel" open style="margin-bottom:0.75rem;">
+      <details id="debug-panel" style="margin-bottom:0.75rem;display:none;">
         <summary style="font-size:0.78rem;font-weight:600;color:var(--text-muted);cursor:pointer;user-select:none;">🔍 Debug log</summary>
         <div id="debug-rms" style="font-size:0.72rem;font-family:monospace;color:var(--text-muted);padding:0.25rem 0.5rem 0;">VAD RMS: — (threshold: 35)</div>
         <div id="debug-log" style="margin-top:0.2rem;font-size:0.72rem;font-family:monospace;color:var(--text-muted);max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.04);border-radius:8px;padding:0.5rem;"></div>
@@ -466,10 +468,10 @@
         </div>
       </details>
 
-      <!-- Yesterday's social tweet — loaded from /summary?date=yesterday -->
+      <!-- Yesterday's tips — loaded from /summary?date=yesterday -->
       <div id="yesterday-summary-card" class="card" style="display:none;background:var(--sage-light);padding:0.75rem 1rem;margin-bottom:0.75rem;">
         <div class="section-title" style="margin-bottom:0.3rem;font-size:0.75rem;">Yesterday</div>
-        <div id="yesterday-tweet" style="font-size:0.88rem;color:var(--sage-dark);font-style:italic;line-height:1.5;"></div>
+        <div id="yesterday-tips" style="font-size:0.88rem;color:var(--sage-dark);line-height:1.6;"></div>
       </div>
 
       <div class="section-title">Today's Log</div>
@@ -544,11 +546,12 @@
     <div class="overlay-sheet">
       <div class="overlay-title">🎤 Edit Log</div>
       <div class="transcript-area" id="edit-log-transcript"></div>
+      <canvas id="voice-vol-edit" width="390" height="48" style="display:none;width:100%;height:48px;margin-bottom:0.5rem;border-radius:8px;background:rgba(0,0,0,0.04);"></canvas>
       <div class="voice-controls">
         <button class="btn-hold" id="btn-hold-edit"
                 ontouchstart="app.holdStart('edit')" ontouchend="app.holdEnd('edit')"
                 onmousedown="app.holdStart('edit')" onmouseup="app.holdEnd('edit')">
-          Hold to Speak
+          🎤 Hold to Speak
         </button>
         <button class="btn btn-secondary btn-narrow" id="btn-done-edit">
           ✓ Done
@@ -564,11 +567,12 @@
     <div class="overlay-sheet">
       <div class="overlay-title">💬 Babble Companion</div>
       <div class="transcript-area" id="companion-transcript"></div>
+      <canvas id="voice-vol-companion" width="390" height="48" style="display:none;width:100%;height:48px;margin-bottom:0.5rem;border-radius:8px;background:rgba(0,0,0,0.04);"></canvas>
       <div class="voice-controls">
         <button class="btn-hold" id="btn-hold-companion"
                 ontouchstart="app.holdStart('companion')" ontouchend="app.holdEnd('companion')"
                 onmousedown="app.holdStart('companion')" onmouseup="app.holdEnd('companion')">
-          Hold to Speak
+          🎤 Hold to Speak
         </button>
         <button class="btn btn-secondary btn-narrow" id="btn-done-companion">
           ✓ End Session
@@ -594,6 +598,7 @@
         </div>
         <button class="btn btn-primary btn-full" id="settings-save">Save</button>
         <button class="btn btn-secondary btn-full" id="settings-close">Cancel</button>
+        <button class="btn btn-secondary btn-full" id="settings-logout" style="margin-top:0.5rem;color:#c0392b;border-color:#c0392b;">Switch Profile</button>
       </div>
     </div>
   </div>
