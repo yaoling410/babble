@@ -1,8 +1,12 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 google-genai==1.67.0
-google-cloud-firestore==2.19.0
+aiosqlite==0.20.0
 python-multipart==0.0.12
-websockets==13.1
 httpx==0.28.1
 python-dotenv==1.0.1
+# Speaker diarization (optional — app degrades gracefully if not installed)
+# pyannote.audio==3.3.2
+# torch>=2.0
+# soundfile>=0.12
+# numpy>=1.24
