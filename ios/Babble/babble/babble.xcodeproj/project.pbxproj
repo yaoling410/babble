@@ -1,0 +1,495 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		99F4EEAC2F6BD04600D3FA98 /* WakeWordService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEAA2F6BD04600D3FA98 /* WakeWordService.swift */; };
+		99F4EEAD2F6BD04600D3FA98 /* BabyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA12F6BD04600D3FA98 /* BabyProfile.swift */; };
+		99F4EEAE2F6BD04600D3FA98 /* SpeakerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA92F6BD04600D3FA98 /* SpeakerStore.swift */; };
+		99F4EEAF2F6BD04600D3FA98 /* EventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA72F6BD04600D3FA98 /* EventStore.swift */; };
+		99F4EEB02F6BD04600D3FA98 /* BabyEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA02F6BD04600D3FA98 /* BabyEvent.swift */; };
+		99F4EEB12F6BD04600D3FA98 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EE9D2F6BD04600D3FA98 /* AppDelegate.swift */; };
+		99F4EEB22F6BD04600D3FA98 /* CryDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA62F6BD04600D3FA98 /* CryDetector.swift */; };
+		99F4EEB32F6BD04600D3FA98 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA52F6BD04600D3FA98 /* AudioCaptureService.swift */; };
+		99F4EEB42F6BD04600D3FA98 /* DaySummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA22F6BD04600D3FA98 /* DaySummary.swift */; };
+		99F4EEB52F6BD04600D3FA98 /* BabbleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EE9E2F6BD04600D3FA98 /* BabbleApp.swift */; };
+		99F4EEB62F6BD04600D3FA98 /* RNNoiseProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA82F6BD04600D3FA98 /* RNNoiseProcessor.swift */; };
+		99F4EEB72F6BD04600D3FA98 /* AnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEA42F6BD04600D3FA98 /* AnalysisService.swift */; };
+		99F4EEC72F6BD07300D3FA98 /* EventListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEBC2F6BD07300D3FA98 /* EventListViewModel.swift */; };
+		99F4EEC82F6BD07300D3FA98 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEC12F6BD07300D3FA98 /* HomeView.swift */; };
+		99F4EEC92F6BD07300D3FA98 /* SummaryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEBE2F6BD07300D3FA98 /* SummaryViewModel.swift */; };
+		99F4EECA2F6BD07300D3FA98 /* AudioBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEB82F6BD07300D3FA98 /* AudioBuffer.swift */; };
+		99F4EECB2F6BD07300D3FA98 /* WAVEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEBA2F6BD07300D3FA98 /* WAVEncoder.swift */; };
+		99F4EECC2F6BD07300D3FA98 /* MonitorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEBD2F6BD07300D3FA98 /* MonitorViewModel.swift */; };
+		99F4EECD2F6BD07300D3FA98 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEC32F6BD07300D3FA98 /* SetupView.swift */; };
+		99F4EECE2F6BD07300D3FA98 /* SummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEC52F6BD07300D3FA98 /* SummaryView.swift */; };
+		99F4EECF2F6BD07300D3FA98 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEC22F6BD07300D3FA98 /* SettingsView.swift */; };
+		99F4EED02F6BD07300D3FA98 /* SpeakersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEC42F6BD07300D3FA98 /* SpeakersView.swift */; };
+		99F4EED12F6BD07300D3FA98 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEB92F6BD07300D3FA98 /* Constants.swift */; };
+		99F4EED22F6BD07300D3FA98 /* EventRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F4EEC02F6BD07300D3FA98 /* EventRowView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		99F4EE8F2F6BCFFD00D3FA98 /* babble.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = babble.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		99F4EE9D2F6BD04600D3FA98 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		99F4EE9E2F6BD04600D3FA98 /* BabbleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BabbleApp.swift; sourceTree = "<group>"; };
+		99F4EEA02F6BD04600D3FA98 /* BabyEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BabyEvent.swift; sourceTree = "<group>"; };
+		99F4EEA12F6BD04600D3FA98 /* BabyProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BabyProfile.swift; sourceTree = "<group>"; };
+		99F4EEA22F6BD04600D3FA98 /* DaySummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaySummary.swift; sourceTree = "<group>"; };
+		99F4EEA42F6BD04600D3FA98 /* AnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisService.swift; sourceTree = "<group>"; };
+		99F4EEA52F6BD04600D3FA98 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
+		99F4EEA62F6BD04600D3FA98 /* CryDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryDetector.swift; sourceTree = "<group>"; };
+		99F4EEA72F6BD04600D3FA98 /* EventStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventStore.swift; sourceTree = "<group>"; };
+		99F4EEA82F6BD04600D3FA98 /* RNNoiseProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RNNoiseProcessor.swift; sourceTree = "<group>"; };
+		99F4EEA92F6BD04600D3FA98 /* SpeakerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerStore.swift; sourceTree = "<group>"; };
+		99F4EEAA2F6BD04600D3FA98 /* WakeWordService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeWordService.swift; sourceTree = "<group>"; };
+		99F4EEB82F6BD07300D3FA98 /* AudioBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioBuffer.swift; sourceTree = "<group>"; };
+		99F4EEB92F6BD07300D3FA98 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		99F4EEBA2F6BD07300D3FA98 /* WAVEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WAVEncoder.swift; sourceTree = "<group>"; };
+		99F4EEBC2F6BD07300D3FA98 /* EventListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventListViewModel.swift; sourceTree = "<group>"; };
+		99F4EEBD2F6BD07300D3FA98 /* MonitorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitorViewModel.swift; sourceTree = "<group>"; };
+		99F4EEBE2F6BD07300D3FA98 /* SummaryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryViewModel.swift; sourceTree = "<group>"; };
+		99F4EEC02F6BD07300D3FA98 /* EventRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventRowView.swift; sourceTree = "<group>"; };
+		99F4EEC12F6BD07300D3FA98 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		99F4EEC22F6BD07300D3FA98 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		99F4EEC32F6BD07300D3FA98 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+		99F4EEC42F6BD07300D3FA98 /* SpeakersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakersView.swift; sourceTree = "<group>"; };
+		99F4EEC52F6BD07300D3FA98 /* SummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		99F4EED42F6BD12000D3FA98 /* Exceptions for "babble" folder in "babble" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 99F4EE8E2F6BCFFD00D3FA98 /* babble */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		99F4EE912F6BCFFD00D3FA98 /* babble */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				99F4EED42F6BD12000D3FA98 /* Exceptions for "babble" folder in "babble" target */,
+			);
+			path = babble;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		99F4EE8C2F6BCFFD00D3FA98 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		99F4EE862F6BCFFD00D3FA98 = {
+			isa = PBXGroup;
+			children = (
+				99F4EE912F6BCFFD00D3FA98 /* babble */,
+				99F4EE902F6BCFFD00D3FA98 /* Products */,
+				99F4EE9F2F6BD04600D3FA98 /* App */,
+				99F4EEA32F6BD04600D3FA98 /* Models */,
+				99F4EEAB2F6BD04600D3FA98 /* Services */,
+				99F4EEBB2F6BD07300D3FA98 /* Utilities */,
+				99F4EEBF2F6BD07300D3FA98 /* ViewModels */,
+				99F4EEC62F6BD07300D3FA98 /* Views */,
+			);
+			sourceTree = "<group>";
+		};
+		99F4EE902F6BCFFD00D3FA98 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				99F4EE8F2F6BCFFD00D3FA98 /* babble.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		99F4EE9F2F6BD04600D3FA98 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				99F4EE9D2F6BD04600D3FA98 /* AppDelegate.swift */,
+				99F4EE9E2F6BD04600D3FA98 /* BabbleApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		99F4EEA32F6BD04600D3FA98 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				99F4EEA02F6BD04600D3FA98 /* BabyEvent.swift */,
+				99F4EEA12F6BD04600D3FA98 /* BabyProfile.swift */,
+				99F4EEA22F6BD04600D3FA98 /* DaySummary.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		99F4EEAB2F6BD04600D3FA98 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				99F4EEA42F6BD04600D3FA98 /* AnalysisService.swift */,
+				99F4EEA52F6BD04600D3FA98 /* AudioCaptureService.swift */,
+				99F4EEA62F6BD04600D3FA98 /* CryDetector.swift */,
+				99F4EEA72F6BD04600D3FA98 /* EventStore.swift */,
+				99F4EEA82F6BD04600D3FA98 /* RNNoiseProcessor.swift */,
+				99F4EEA92F6BD04600D3FA98 /* SpeakerStore.swift */,
+				99F4EEAA2F6BD04600D3FA98 /* WakeWordService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		99F4EEBB2F6BD07300D3FA98 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				99F4EEB82F6BD07300D3FA98 /* AudioBuffer.swift */,
+				99F4EEB92F6BD07300D3FA98 /* Constants.swift */,
+				99F4EEBA2F6BD07300D3FA98 /* WAVEncoder.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		99F4EEBF2F6BD07300D3FA98 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				99F4EEBC2F6BD07300D3FA98 /* EventListViewModel.swift */,
+				99F4EEBD2F6BD07300D3FA98 /* MonitorViewModel.swift */,
+				99F4EEBE2F6BD07300D3FA98 /* SummaryViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		99F4EEC62F6BD07300D3FA98 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				99F4EEC02F6BD07300D3FA98 /* EventRowView.swift */,
+				99F4EEC12F6BD07300D3FA98 /* HomeView.swift */,
+				99F4EEC22F6BD07300D3FA98 /* SettingsView.swift */,
+				99F4EEC32F6BD07300D3FA98 /* SetupView.swift */,
+				99F4EEC42F6BD07300D3FA98 /* SpeakersView.swift */,
+				99F4EEC52F6BD07300D3FA98 /* SummaryView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		99F4EE8E2F6BCFFD00D3FA98 /* babble */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99F4EE9A2F6BCFFE00D3FA98 /* Build configuration list for PBXNativeTarget "babble" */;
+			buildPhases = (
+				99F4EE8B2F6BCFFD00D3FA98 /* Sources */,
+				99F4EE8C2F6BCFFD00D3FA98 /* Frameworks */,
+				99F4EE8D2F6BCFFD00D3FA98 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				99F4EE912F6BCFFD00D3FA98 /* babble */,
+			);
+			name = babble;
+			packageProductDependencies = (
+			);
+			productName = babble;
+			productReference = 99F4EE8F2F6BCFFD00D3FA98 /* babble.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		99F4EE872F6BCFFD00D3FA98 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					99F4EE8E2F6BCFFD00D3FA98 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+				};
+			};
+			buildConfigurationList = 99F4EE8A2F6BCFFD00D3FA98 /* Build configuration list for PBXProject "babble" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 99F4EE862F6BCFFD00D3FA98;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 99F4EE902F6BCFFD00D3FA98 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				99F4EE8E2F6BCFFD00D3FA98 /* babble */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		99F4EE8D2F6BCFFD00D3FA98 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		99F4EE8B2F6BCFFD00D3FA98 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99F4EEAC2F6BD04600D3FA98 /* WakeWordService.swift in Sources */,
+				99F4EEAD2F6BD04600D3FA98 /* BabyProfile.swift in Sources */,
+				99F4EEAE2F6BD04600D3FA98 /* SpeakerStore.swift in Sources */,
+				99F4EEAF2F6BD04600D3FA98 /* EventStore.swift in Sources */,
+				99F4EEB02F6BD04600D3FA98 /* BabyEvent.swift in Sources */,
+				99F4EEC72F6BD07300D3FA98 /* EventListViewModel.swift in Sources */,
+				99F4EEC82F6BD07300D3FA98 /* HomeView.swift in Sources */,
+				99F4EEC92F6BD07300D3FA98 /* SummaryViewModel.swift in Sources */,
+				99F4EECA2F6BD07300D3FA98 /* AudioBuffer.swift in Sources */,
+				99F4EECB2F6BD07300D3FA98 /* WAVEncoder.swift in Sources */,
+				99F4EECC2F6BD07300D3FA98 /* MonitorViewModel.swift in Sources */,
+				99F4EECD2F6BD07300D3FA98 /* SetupView.swift in Sources */,
+				99F4EECE2F6BD07300D3FA98 /* SummaryView.swift in Sources */,
+				99F4EECF2F6BD07300D3FA98 /* SettingsView.swift in Sources */,
+				99F4EED02F6BD07300D3FA98 /* SpeakersView.swift in Sources */,
+				99F4EED12F6BD07300D3FA98 /* Constants.swift in Sources */,
+				99F4EED22F6BD07300D3FA98 /* EventRowView.swift in Sources */,
+				99F4EEB12F6BD04600D3FA98 /* AppDelegate.swift in Sources */,
+				99F4EEB22F6BD04600D3FA98 /* CryDetector.swift in Sources */,
+				99F4EEB32F6BD04600D3FA98 /* AudioCaptureService.swift in Sources */,
+				99F4EEB42F6BD04600D3FA98 /* DaySummary.swift in Sources */,
+				99F4EEB52F6BD04600D3FA98 /* BabbleApp.swift in Sources */,
+				99F4EEB62F6BD04600D3FA98 /* RNNoiseProcessor.swift in Sources */,
+				99F4EEB72F6BD04600D3FA98 /* AnalysisService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		99F4EE982F6BCFFE00D3FA98 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		99F4EE992F6BCFFE00D3FA98 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		99F4EE9B2F6BCFFE00D3FA98 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = babble/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ylsong.babble;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		99F4EE9C2F6BCFFE00D3FA98 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = babble/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ylsong.babble;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		99F4EE8A2F6BCFFD00D3FA98 /* Build configuration list for PBXProject "babble" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99F4EE982F6BCFFE00D3FA98 /* Debug */,
+				99F4EE992F6BCFFE00D3FA98 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		99F4EE9A2F6BCFFE00D3FA98 /* Build configuration list for PBXNativeTarget "babble" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99F4EE9B2F6BCFFE00D3FA98 /* Debug */,
+				99F4EE9C2F6BCFFE00D3FA98 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 99F4EE872F6BCFFD00D3FA98 /* Project object */;
+}
