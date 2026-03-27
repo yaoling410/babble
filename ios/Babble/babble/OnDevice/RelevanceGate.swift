@@ -9,49 +9,145 @@ import Foundation
 //  is not about the baby. This gate filters before the expensive
 //  Foundation Models 3B analysis.
 //
-//  Unlike TranscriptFilter (backend path), there is no wake word
-//  or active period. Each window is evaluated independently.
+//  TWO-TIER DESIGN
+//  ----------------
+//  Level 1 (strict): Baby name, keywords, phrases, Chinese terms.
+//          Always active. A Level 1 match starts/extends a 2-minute
+//          "active period".
 //
-//  TODO: Why 30s window? We check every WhisperKit transcription
-//  chunk. Window size is configurable in WhisperKitService.
+//  Level 2 (loose):  Question patterns, pronouns, contextual phrases.
+//          Only active during the active period (2 min after L1 match).
+//          Catches follow-up conversation like "是生病了吗?" spoken
+//          seconds after "Luca拉屎了".
+//
+//  IMPORTANT: Only Level 1 matches extend the active period. Level 2
+//  matches consume it but do not renew — prevents infinite chains of
+//  loose matches keeping the window alive.
 
 enum RelevanceGate {
 
-    static func isRelevant(text: String, babyName: String) -> Bool {
+    // MARK: - Result type
+
+    enum GateResult {
+        case passed(Level)
+        case blocked
+
+        enum Level: String {
+            case level1 = "L1"
+            case level2 = "L2"
+        }
+
+        var isRelevant: Bool {
+            if case .passed = self { return true }
+            return false
+        }
+    }
+
+    // MARK: - Active period state
+
+    /// Timestamp of the last Level 1 match.
+    private(set) static var lastPassedAt: Date?
+
+    /// Duration of the active period after a Level 1 match.
+    private static let activePeriodDuration: TimeInterval = 120 // 2 minutes
+
+    /// Whether we're in the active period (a Level 1 window passed recently).
+    static var isActivePeriod: Bool {
+        guard let last = lastPassedAt else { return false }
+        return Date().timeIntervalSince(last) < activePeriodDuration
+    }
+
+    /// Call this when a Level 1 match occurs to start/extend the active period.
+    static func markPassed() {
+        lastPassedAt = Date()
+    }
+
+    /// Reset state (e.g. when pipeline stops).
+    static func reset() {
+        lastPassedAt = nil
+    }
+
+    // MARK: - Public gate
+
+    static func isRelevant(text: String, babyName: String) -> GateResult {
         let lower = text.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !lower.isEmpty else { return false }
+        guard !lower.isEmpty else { return .blocked }
 
         let words = lower.split(separator: " ").map(String.init)
 
         // Chinese text has no spaces — skip minimum word guard
         let hasChinese = lower.unicodeScalars.contains { $0.value >= 0x4E00 && $0.value <= 0x9FFF }
-        if words.count < 3 && !hasChinese { return false }
-        if isOnlyFiller(words) { return false }
+        if words.count < 3 && !hasChinese { return .blocked }
+        if isOnlyFiller(words) { return .blocked }
 
-        // 1. Baby's name
+        let wordSet = Set(words)
+
+        // Level 1: strict keyword/name matching
+        if checkLevel1(lower: lower, words: words, wordSet: wordSet, babyName: babyName, hasChinese: hasChinese) {
+            return .passed(.level1)
+        }
+
+        // Level 2: looser conditions, only during active period
+        if isActivePeriod && checkLevel2(lower: lower, words: words, wordSet: wordSet, hasChinese: hasChinese) {
+            return .passed(.level2)
+        }
+
+        return .blocked
+    }
+
+    // MARK: - Level 1 (strict)
+
+    private static func checkLevel1(
+        lower: String,
+        words: [String],
+        wordSet: Set<String>,
+        babyName: String,
+        hasChinese: Bool
+    ) -> Bool {
+        // Baby's name
         if !babyName.isEmpty && lower.contains(babyName.lowercased()) { return true }
 
-        // 2. Single-word keywords (O(1))
-        let wordSet = Set(words)
+        // Single-word keywords (O(1))
         if !wordSet.isDisjoint(with: singleWordKeywords) { return true }
 
-        // 3. Multi-word phrases
+        // Multi-word phrases
         if multiWordPhrases.contains(where: { lower.contains($0) }) { return true }
 
-        // 4. Nicknames
+        // Baby nicknames
         if babyNicknames.contains(where: { lower.contains($0) }) { return true }
 
-        // 5. Chinese keywords
+        // Chinese keywords
         if chineseSingleCharKeywords.contains(where: { lower.contains($0) }) { return true }
         if chineseKeywords.contains(where: { lower.contains($0) }) { return true }
 
-        // 6. Pronoun + baby keyword co-occurrence
+        // Pronoun + baby keyword co-occurrence (strict: >= 5 words)
         if hasPronounWithBabyContext(words) { return true }
 
         return false
     }
 
-    // MARK: - Pronoun + context
+    // MARK: - Level 2 (loose, active period only)
+
+    private static func checkLevel2(
+        lower: String,
+        words: [String],
+        wordSet: Set<String>,
+        hasChinese: Bool
+    ) -> Bool {
+        // Chinese question / continuation patterns
+        if chineseLevel2Patterns.contains(where: { lower.contains($0) }) { return true }
+
+        // English follow-up patterns
+        if englishLevel2Patterns.contains(where: { lower.contains($0) }) { return true }
+
+        // Bare pronouns with low threshold (>= 3 words)
+        // Parents say "she's sick", "he ate" — during active period this is enough
+        if words.count >= 3 && !wordSet.isDisjoint(with: level2Pronouns) { return true }
+
+        return false
+    }
+
+    // MARK: - Pronoun + context (Level 1 helper)
 
     private static func hasPronounWithBabyContext(_ words: [String]) -> Bool {
         let pronouns: Set<String> = ["she", "he", "her", "him"]
@@ -69,7 +165,9 @@ enum RelevanceGate {
         "crawl", "walked", "rolled", "smiled", "laughed",
     ]
 
-    // MARK: - Keywords
+    // ════════════════════════════════════════════════════════════
+    // MARK: - Level 1 keywords
+    // ════════════════════════════════════════════════════════════
 
     private static let singleWordKeywords: Set<String> = [
         // Feeding
@@ -163,7 +261,7 @@ enum RelevanceGate {
         "tiny", "tiny one", "the baby", "our baby",
     ]
 
-    // MARK: - Chinese keywords
+    // MARK: - Level 1 Chinese keywords
 
     private static let chineseSingleCharKeywords: Set<String> = [
         "哭", "奶", "睡", "吃", "尿", "拉", "烧", "饿", "困",
@@ -181,10 +279,11 @@ enum RelevanceGate {
         "尿布", "纸尿裤", "便便", "大便", "小便", "拉了",
         "换尿布", "尿布疹",
         "屙屎", "屙尿", "濕了", "換片",
+        "生病", "病了", "不舒服", "难受", "不对劲",
         "发烧", "体温", "儿科", "疫苗", "打针",
         "鼻塞", "咳嗽", "感冒", "长牙", "过敏",
         "腹泻", "便秘", "体检", "胀气", "黄疸", "湿疹",
-        "發燒", "睇醫生",
+        "發燒", "睇醫生", "唔舒服",
         "笑了", "翻身", "爬了", "站起来", "走路了",
         "坐起来", "第一次", "趴着练习",
         "識笑", "識爬", "識行",
@@ -194,6 +293,35 @@ enum RelevanceGate {
         "安抚奶嘴", "奶嘴", "包巾", "背带",
         "奶咀", "揹帶",
         "洗澡", "沖涼",
+    ]
+
+    // ════════════════════════════════════════════════════════════
+    // MARK: - Level 2 patterns (active period only)
+    // ════════════════════════════════════════════════════════════
+
+    /// Chinese question particles, hedging words, and continuation phrases.
+    /// These are common in follow-up conversation but too generic for Level 1.
+    private static let chineseLevel2Patterns: [String] = [
+        // Question particles
+        "吗", "了吗", "怎么", "什么", "是不是", "有没有", "好不好", "对不对",
+        // Hedging / continuation — parents thinking aloud about the baby
+        "好像", "感觉", "要不要", "还是", "应该", "可能", "需不需要",
+        // Cantonese question particles
+        "咩", "点解", "系咪", "使唔使",
+    ]
+
+    /// English follow-up phrases parents use without repeating the baby's name.
+    private static let englishLevel2Patterns: [String] = [
+        "is she", "is he", "did she", "did he", "was she", "was he",
+        "has she", "has he", "can she", "can he",
+        "does she", "does he",
+        "how is", "what about", "should we", "do we need",
+        "when did", "how long", "how much",
+    ]
+
+    /// Pronouns accepted with low word-count threshold (>= 3 words) during active period.
+    private static let level2Pronouns: Set<String> = [
+        "she", "he", "her", "him",
     ]
 
     // MARK: - Filler detection

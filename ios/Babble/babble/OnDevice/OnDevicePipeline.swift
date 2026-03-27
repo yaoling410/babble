@@ -159,6 +159,7 @@ final class OnDevicePipeline: ObservableObject {
         autoCompleteTimer?.invalidate()
         autoCompleteTimer = nil
         whisper.reset()
+        RelevanceGate.reset()
         state = .idle
     }
 
@@ -185,13 +186,18 @@ final class OnDevicePipeline: ObservableObject {
             return
         }
 
-        // Gate 2: Relevance
-        let relevant = RelevanceGate.isRelevant(text: window.text, babyName: profile.babyName)
-        guard relevant else {
-            NSLog("[OnDevice] 🚫 Gate 2 BLOCKED — not baby-related: '\(window.text.prefix(80))'")
+        // Gate 2: Relevance (two-tier)
+        let gateResult = RelevanceGate.isRelevant(text: window.text, babyName: profile.babyName)
+        guard gateResult.isRelevant else {
+            NSLog("[OnDevice] 🚫 Gate 2 BLOCKED — not baby-related: '\(window.text.prefix(80))' (activePeriod=\(RelevanceGate.isActivePeriod))")
             return
         }
-        NSLog("[OnDevice] ✅ Gate 2 PASSED — baby-related, proceeding to diarize+analyze")
+        // Only Level 1 matches extend the active period
+        if case .passed(.level1) = gateResult {
+            RelevanceGate.markPassed()
+        }
+        let level: String = { if case .passed(let l) = gateResult { return l.rawValue } else { return "?" } }()
+        NSLog("[OnDevice] ✅ Gate 2 PASSED [\(level)] — proceeding to diarize+analyze (activePeriod=\(RelevanceGate.isActivePeriod))")
 
         state = .processing
 
