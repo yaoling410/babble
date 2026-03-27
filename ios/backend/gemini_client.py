@@ -279,9 +279,13 @@ Rules:
 - relevant = false if the clip is casual conversation, background noise, or has nothing baby-related.
 - transcript and new_events are only required when relevant = true.
 - new_events: only log activities that clearly involve the baby. Use speaker's words for description.
+- A single sentence can contain MULTIPLE events — extract every one separately.
+  Example: "she pooped then drank a bottle" → 1 diaper event + 1 feeding event.
+  Example: "他拉完屎然后喝了奶再玩了一会" → 1 diaper + 1 feeding + 1 play.
+  Do NOT merge multiple actions into one event.
 - past_events: only reference IDs from [Recent events] that were explicitly corrected in this clip.
 - Do NOT invent or assume corrections.
-- Timestamps: ISO 8601 UTC, using clip_timestamp as reference.
+- Timestamps: ISO 8601 UTC, using clip_timestamp as reference. If multiple events come from one sentence, space their timestamps ~1 minute apart in chronological order.
 - notable = true only for first-time milestones or urgent health concerns.
 - For transcript: fix ASR errors (e.g. "cyber" → "yeah"), collapse repeated filler words, keep speaker turns.
 - speaker in transcript: use whatever labels the input already has (e.g. "Speaker 1", "Speaker 2"). If the input has no speaker labels, use "Speaker 1" for all lines — do NOT infer or invent multiple speakers.
@@ -289,7 +293,7 @@ Rules:
 - status on new_events: "confirmed" (clearly stated) or "tentative" (inferred/uncertain).
 - status on past_events: "updated" or "deleted".
 
-Event types: feeding | nap_start | nap_end | cry | diaper | outing | health_note | activity | new_food | milestone | emotional_support | observation
+Event types: feeding | sleep | nap_start | nap_end | cry | diaper | outing | health_note | activity | play | new_food | milestone | mood | emotional_support | observation
 
 emotional_support: use when the caregiver expresses clear emotional distress — e.g. crying, saying they're overwhelmed, exhausted beyond normal tiredness, feeling hopeless, or asking for help. One sentence of warm acknowledgement in the description. notable = true always.
 

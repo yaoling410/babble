@@ -56,9 +56,13 @@ final class EventListViewModel: ObservableObject {
     }
 
     private static func makeGroups(from events: [BabyEvent]) -> [EventGroup] {
+        // Apply merge/suppress rules: mood and cry fold into nearby primary events,
+        // emotionalSupport is hidden, activity/observation only shown if notable.
+        let visible = events.timelineMerged()
+
         var dict: [EventGroup.Bucket: [BabyEvent]] = [:]
         let cal = Calendar.current
-        for event in events {
+        for event in visible {
             let hour = cal.component(.hour, from: event.timestamp)
             dict[EventGroup.Bucket(hour: hour), default: []].append(event)
         }

@@ -101,6 +101,7 @@ struct BabyEvent: Identifiable, Codable, Equatable {
     var milestoneDetails: MilestoneDetails?
     var moodDetails: MoodDetails?
     var activityDetails: ActivityDetails?
+    var playDetails: PlayDetails?
     var growthDetails: GrowthDetails?
     var accidentDetails: AccidentDetails?
 
@@ -159,10 +160,29 @@ struct BabyEvent: Identifiable, Codable, Equatable {
     //  activity     tummy_time, bath, outing, play, reading, music, class
     //  growth       (from well visits — weight, height, head circumference)
     //  accident     fall, bump, scratch, bite, burn, choking, other
+    //  play         play session (tummy time, peek-a-boo, toys, etc.)
     //  cry          crying episode (often triggered by cry detector)
     //  newFood      first time eating a specific food (also tagged first_time)
     //  emotionalSupport  caregiver stress detected — gentle check-in
     //  observation  anything that doesn't fit a structured type
+    //
+    //  TIMELINE VISIBILITY
+    //  -------------------
+    //  Not all event types appear as standalone rows on the timeline.
+    //  Some are merged into neighboring events or suppressed entirely:
+    //
+    //  Type               Rule
+    //  ────               ────
+    //  mood               Merged into the nearest feeding/sleep/activity/play
+    //                     event as context (e.g. "Feeding — fussy before").
+    //                     Suppressed if low confidence (< 0.5).
+    //  cry                Merged into preceding/following event as context
+    //                     (e.g. "Feeding 2:15 PM — fussy before").
+    //  activity           Only shown if notable == true; otherwise folded
+    //                     into the daily summary.
+    //  emotionalSupport   Never shown on timeline (caregiver support, not
+    //                     baby tracking). Surfaced via a separate UI prompt.
+    //  observation        Only shown if notable == true.
 
     enum EventType: String, Codable, CaseIterable {
         case feeding
@@ -172,6 +192,7 @@ struct BabyEvent: Identifiable, Codable, Equatable {
         case milestone
         case mood
         case activity
+        case play
         case growth
         case accident
         case cry
@@ -188,6 +209,7 @@ struct BabyEvent: Identifiable, Codable, Equatable {
             case .milestone:        return "Milestone"
             case .mood:             return "Mood"
             case .activity:         return "Activity"
+            case .play:             return "Play"
             case .growth:           return "Growth"
             case .accident:         return "Accident"
             case .cry:              return "Crying"
@@ -206,6 +228,7 @@ struct BabyEvent: Identifiable, Codable, Equatable {
             case .milestone:        return "⭐"
             case .mood:             return "🫠"
             case .activity:         return "🎮"
+            case .play:             return "🧸"
             case .growth:           return "📏"
             case .accident:         return "🩹"
             case .cry:              return "😢"
@@ -427,6 +450,22 @@ struct BabyEvent: Identifiable, Codable, Equatable {
     }
 
     // ================================================================
+    //  MARK: - Play details
+    // ================================================================
+    //
+    //  Play sessions — tummy time, peek-a-boo, toys, sensory play, etc.
+    //  Separate from "activity" (which covers bath, outing, class).
+
+    struct PlayDetails: Codable, Equatable {
+        var durationMin: Int?          // how long the play session lasted
+        var playType: String?          // "tummy_time" | "sensory" | "toys" | "peek_a_boo" | "reading" | "music" | "free_play"
+        var location: String?          // "play mat", "floor", "high chair"
+        var description: String?       // "loved the rattle, reached and grabbed it"
+        var withCaregiver: String?     // "Mom", "Dad", "Nanny"
+        var developmental: String?     // optional milestone note: "first time reaching for toy"
+    }
+
+    // ================================================================
     //  MARK: - Growth details
     // ================================================================
     //
@@ -471,6 +510,117 @@ extension BabyEvent {
     struct EditEntry: Codable, Equatable {
         var editedAt: Date
         var previousDetail: String?
+    }
+
+    // ================================================================
+    //  MARK: - Timeline visibility
+    // ================================================================
+    //
+    //  Not every event deserves its own row. Some types are contextual —
+    //  they enrich a neighboring event rather than standing alone.
+    //
+    //  showOnTimeline: false means the event is still stored and counted
+    //  in the daily summary, but the timeline UI skips it.
+    //
+    //  mergeableTypes: events that should be folded into a nearby primary
+    //  event (feeding/sleep/play/activity) as extra context text.
+
+    /// Whether this event should appear as its own row on the timeline.
+    var showOnTimeline: Bool {
+        switch type {
+        case .emotionalSupport:
+            // Never shown — caregiver support, not baby tracking
+            return false
+        case .mood:
+            // Suppress low-confidence mood events; they'll be merged into
+            // a nearby primary event by timelineMerged()
+            return false
+        case .cry:
+            // Cry events are merged into neighboring events as context
+            return false
+        case .activity:
+            // Only show notable activities (e.g. first tummy time);
+            // routine activities fold into the daily summary
+            return notable
+        case .observation:
+            // Only show notable observations
+            return notable
+        default:
+            return true
+        }
+    }
+}
+
+// ============================================================
+//  MARK: - Timeline merge logic
+// ============================================================
+//
+//  Merges mood/cry events into their nearest primary event within
+//  a 15-minute window. The merged context appears as a suffix on
+//  the primary event's detail text.
+//
+//  Example: "Breastfed 15 min left side" + nearby cry event
+//         → "Breastfed 15 min left side — fussy before"
+
+extension Array where Element == BabyEvent {
+
+    /// Returns a new array with mergeable events folded into nearby primary events.
+    /// The original events are not modified — this produces display-ready copies.
+    func timelineMerged() -> [BabyEvent] {
+        let primaryTypes: Set<BabyEvent.EventType> = [
+            .feeding, .sleep, .diaper, .play, .activity, .health, .milestone, .newFood
+        ]
+
+        // Separate into primary (shown) and mergeable (folded in)
+        let mergeable = self.filter { $0.type == .mood || $0.type == .cry }
+        guard !mergeable.isEmpty else {
+            return self.filter { $0.showOnTimeline }
+        }
+
+        var result = self.filter { primaryTypes.contains($0.type) || $0.showOnTimeline }
+
+        for context in mergeable {
+            // Find the nearest primary event within 15 minutes
+            let windowSeconds: TimeInterval = 15 * 60
+            var bestIdx: Int?
+            var bestDist: TimeInterval = .greatestFiniteMagnitude
+
+            for (i, event) in result.enumerated() {
+                guard primaryTypes.contains(event.type) else { continue }
+                let dist = abs(event.timestamp.timeIntervalSince(context.timestamp))
+                if dist < windowSeconds && dist < bestDist {
+                    bestDist = dist
+                    bestIdx = i
+                }
+            }
+
+            if let idx = bestIdx {
+                let contextText = contextSuffix(for: context)
+                if !contextText.isEmpty {
+                    result[idx].detail += " — \(contextText)"
+                }
+            }
+            // If no nearby primary event, the context event is simply dropped
+            // from the timeline (still in storage and daily summary).
+        }
+
+        return result
+    }
+}
+
+/// Build a short context string from a mood or cry event.
+private func contextSuffix(for event: BabyEvent) -> String {
+    switch event.type {
+    case .mood:
+        if let value = event.moodDetails?.value {
+            let trigger = event.moodDetails?.trigger.map { " (\($0))" } ?? ""
+            return "\(value)\(trigger)"
+        }
+        return event.detail
+    case .cry:
+        return "fussy/crying"
+    default:
+        return event.detail
     }
 }
 
