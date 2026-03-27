@@ -96,7 +96,10 @@ final class OnDevicePipeline: ObservableObject {
             state = .error("BabyProfile not configured")
             return
         }
-        NSLog("[OnDevice] ✅ Dependencies OK — baby='\(profile.babyName)' age=\(profile.babyAgeMonths)mo speakers=\(speakerStore?.speakers.count ?? 0)")
+        // Pass language + baby name to WhisperKit for prompt biasing
+        whisper.language = profile.whisperLanguage
+        whisper.babyName = profile.babyName
+        NSLog("[OnDevice] ✅ Dependencies OK — baby='\(profile.babyName)' age=\(profile.babyAgeMonths)mo speakers=\(speakerStore?.speakers.count ?? 0) language=\(profile.whisperLanguage)")
 
         // Wire audio buffer → WhisperKit
         bufferCount = 0
@@ -187,7 +190,11 @@ final class OnDevicePipeline: ObservableObject {
         }
 
         // Gate 2: Relevance (two-tier)
-        let gateResult = RelevanceGate.isRelevant(text: window.text, babyName: profile.babyName)
+        let gateResult = RelevanceGate.isRelevant(
+            text: window.text,
+            babyName: profile.babyName,
+            nameAliases: profile.nameAliases
+        )
         guard gateResult.isRelevant else {
             NSLog("[OnDevice] 🚫 Gate 2 BLOCKED — not baby-related: '\(window.text.prefix(80))' (activePeriod=\(RelevanceGate.isActivePeriod))")
             return

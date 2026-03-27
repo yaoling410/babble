@@ -69,7 +69,7 @@ enum RelevanceGate {
 
     // MARK: - Public gate
 
-    static func isRelevant(text: String, babyName: String) -> GateResult {
+    static func isRelevant(text: String, babyName: String, nameAliases: [String] = []) -> GateResult {
         let lower = text.lowercased().trimmingCharacters(in: .whitespaces)
         guard !lower.isEmpty else { return .blocked }
 
@@ -83,7 +83,7 @@ enum RelevanceGate {
         let wordSet = Set(words)
 
         // Level 1: strict keyword/name matching
-        if checkLevel1(lower: lower, words: words, wordSet: wordSet, babyName: babyName, hasChinese: hasChinese) {
+        if checkLevel1(lower: lower, words: words, wordSet: wordSet, babyName: babyName, nameAliases: nameAliases, hasChinese: hasChinese) {
             return .passed(.level1)
         }
 
@@ -102,10 +102,14 @@ enum RelevanceGate {
         words: [String],
         wordSet: Set<String>,
         babyName: String,
+        nameAliases: [String],
         hasChinese: Bool
     ) -> Bool {
         // Baby's name
         if !babyName.isEmpty && lower.contains(babyName.lowercased()) { return true }
+
+        // Name aliases (nicknames, alternate spellings configured in settings)
+        if nameAliases.contains(where: { !$0.isEmpty && lower.contains($0.lowercased()) }) { return true }
 
         // Single-word keywords (O(1))
         if !wordSet.isDisjoint(with: singleWordKeywords) { return true }
