@@ -37,9 +37,19 @@ CREATE TABLE IF NOT EXISTS speaker_profiles (
     label           TEXT NOT NULL,
     embedding       BLOB NOT NULL,
     sample_count    INTEGER NOT NULL DEFAULT 1,
+    name_variants   TEXT NOT NULL DEFAULT '[]',
+    name_embedding  BLOB,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
+"""
+
+_MIGRATE_SPEAKERS_VARIANTS = """
+ALTER TABLE speaker_profiles ADD COLUMN name_variants TEXT NOT NULL DEFAULT '[]';
+"""
+
+_MIGRATE_SPEAKERS_NAME_EMBEDDING = """
+ALTER TABLE speaker_profiles ADD COLUMN name_embedding BLOB;
 """
 
 _IDX_EVENTS_DATE = """
@@ -54,6 +64,12 @@ async def init_db() -> None:
         await db.execute(_CREATE_SUMMARIES)
         await db.execute(_CREATE_SPEAKERS)
         await db.execute(_IDX_EVENTS_DATE)
+        # Migrate existing DBs that predate the name_variants / name_embedding columns
+        for migration in (_MIGRATE_SPEAKERS_VARIANTS, _MIGRATE_SPEAKERS_NAME_EMBEDDING):
+            try:
+                await db.execute(migration)
+            except Exception:
+                pass  # column already exists
         await db.commit()
 
 
@@ -244,15 +260,16 @@ def _row_to_speaker(row) -> dict:
         "label": row[1],
         "embedding": row[2],  # raw bytes
         "sample_count": row[3],
-        "created_at": row[4],
-        "updated_at": row[5],
+        "name_variants": json.loads(row[4] or "[]"),
+        "created_at": row[5],
+        "updated_at": row[6],
     }
 
 
 async def get_speakers() -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT id, label, embedding, sample_count, created_at, updated_at "
+            "SELECT id, label, embedding, sample_count, name_variants, created_at, updated_at "
             "FROM speaker_profiles ORDER BY label ASC"
         ) as cursor:
             rows = await cursor.fetchall()
@@ -262,18 +279,29 @@ async def get_speakers() -> list[dict]:
             "id": r[0],
             "label": r[1],
             "sample_count": r[3],
-            "created_at": r[4],
-            "updated_at": r[5],
+            "name_variants": json.loads(r[4] or "[]"),
+            "created_at": r[5],
+            "updated_at": r[6],
         }
         for r in rows
     ]
+
+
+async def get_speaker_embedding(speaker_id: str) -> bytes | None:
+    """Return raw embedding bytes for a single speaker, or None if not found."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT embedding FROM speaker_profiles WHERE id = ?", (speaker_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+    return row[0] if row else None
 
 
 async def get_speaker_embeddings() -> list[dict]:
     """Return all speakers WITH their embedding bytes (for diarization matching)."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT id, label, embedding, sample_count, created_at, updated_at "
+            "SELECT id, label, embedding, sample_count, name_variants, created_at, updated_at "
             "FROM speaker_profiles"
         ) as cursor:
             rows = await cursor.fetchall()
@@ -284,27 +312,30 @@ async def upsert_speaker(
     label: str,
     embedding: bytes,
     speaker_id: str | None = None,
+    name_variants: list[str] | None = None,
+    name_embedding: bytes | None = None,
 ) -> dict:
     """Insert or update a speaker. If speaker_id given, updates that record (running avg)."""
     now = datetime.now(timezone.utc).isoformat()
+    variants_json = json.dumps(name_variants or [])
     async with aiosqlite.connect(DB_PATH) as db:
         if speaker_id:
-            # Update existing: increment sample_count, update embedding + timestamp
             await db.execute(
                 "UPDATE speaker_profiles SET embedding = ?, sample_count = sample_count + 1, "
-                "updated_at = ?, label = ? WHERE id = ?",
-                (embedding, now, label, speaker_id),
+                "updated_at = ?, label = ?, name_variants = ?, name_embedding = ? WHERE id = ?",
+                (embedding, now, label, variants_json, name_embedding, speaker_id),
             )
             sid = speaker_id
         else:
             sid = str(uuid.uuid4())
             await db.execute(
-                "INSERT INTO speaker_profiles (id, label, embedding, sample_count, created_at, updated_at) "
-                "VALUES (?, ?, ?, 1, ?, ?)",
-                (sid, label, embedding, now, now),
+                "INSERT INTO speaker_profiles "
+                "(id, label, embedding, sample_count, name_variants, name_embedding, created_at, updated_at) "
+                "VALUES (?, ?, ?, 1, ?, ?, ?, ?)",
+                (sid, label, embedding, variants_json, name_embedding, now, now),
             )
         await db.commit()
-    return {"id": sid, "label": label, "updated_at": now}
+    return {"id": sid, "label": label, "updated_at": now, "name_variants": name_variants or []}
 
 
 async def rename_speaker(speaker_id: str, label: str) -> None:

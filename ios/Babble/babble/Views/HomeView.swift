@@ -1,29 +1,47 @@
 import SwiftUI
 
+// ============================================================
+//  HomeView.swift — Main monitoring screen
+// ============================================================
+//
+//  WHERE IT FITS
+//  -------------
+//  The primary screen after setup. Shown by RootView when
+//  profile.babyName is non-empty. Contains:
+//
+//  1. StatusBadge — pulsing dot showing pipeline state
+//     (idle → listening → wake detected → capturing → analyzing)
+//
+//  2. EventListView — today's events grouped by time of day,
+//     with swipe-to-delete and pull-to-refresh from backend
+//
+//  3. BottomBar — hold-to-record button + mode toggle (edit/support)
+//     + summary button
+//
+//  4. Sheets: SummaryView, SettingsView, UnknownSpeakerSheet
+//
+//  ALSO CONTAINS
+//  -------------
+//  - StatusBadge: visual state indicator (green=listening, orange=capturing, etc.)
+//  - EventListView: list with time-bucketed sections
+//  - EventGroup: time bucket model (morning/afternoon/evening/night)
+//  - BottomBar: record button + mode toggle + summary shortcut
+//  - HoldRecordButton: press-and-hold mic button for manual recording
+//  - UnknownSpeakerSheet: prompt to name a new voice
+
 struct HomeView: View {
     @EnvironmentObject var profile: BabyProfile
     @EnvironmentObject var eventStore: EventStore
     @EnvironmentObject var speakerStore: SpeakerStore
+    @EnvironmentObject var monitorVM: MonitorViewModel
+    @EnvironmentObject var eventListVM: EventListViewModel
+    @EnvironmentObject var summaryVM: SummaryViewModel
 
-    @StateObject private var monitorVM: MonitorViewModel
-    @StateObject private var eventListVM: EventListViewModel
     @State private var showSummary = false
     @State private var showSettings = false
     @State private var isHoldingRecord = false
     @State private var recordMode: String = "edit"   // "edit" | "support"
     @State private var showReply = false
-
-    init() {
-        // These will be replaced with proper injection via .onAppear
-        // SwiftUI doesn't allow EnvironmentObject in @StateObject initializer,
-        // so we use a placeholder — overwritten in onAppear.
-        _monitorVM = StateObject(wrappedValue: MonitorViewModel(
-            profile: BabyProfile(), eventStore: EventStore(), speakerStore: SpeakerStore()
-        ))
-        _eventListVM = StateObject(wrappedValue: EventListViewModel(
-            eventStore: EventStore(), analysisService: AnalysisService()
-        ))
-    }
 
     var body: some View {
         NavigationStack {
@@ -42,10 +60,7 @@ struct HomeView: View {
                     recordMode: $recordMode,
                     onHoldStart: { monitorVM.startManualRecording() },
                     onHoldEnd: { mode in
-                        Task {
-                            // For support mode: send as voice note
-                            // (ManualRecording handled inside MonitorVM)
-                        }
+                        Task { await monitorVM.stopManualRecording(mode: mode) }
                     },
                     onSummaryTap: { showSummary = true }
                 )
@@ -75,6 +90,7 @@ struct HomeView: View {
                 SummaryView()
                     .environmentObject(profile)
                     .environmentObject(eventStore)
+                    .environmentObject(summaryVM)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -88,6 +104,16 @@ struct HomeView: View {
         }
         .onChange(of: monitorVM.replyText) { text in
             if text != nil { showReply = true }
+        }
+        // Vault hourly pass detected caregiver emotional distress — gentle check-in
+        .alert("💛 Just checking in", isPresented: $monitorVM.emotionalSupportDetected) {
+            Button("I'm OK") { monitorVM.emotionalSupportDetected = false }
+            Button("Talk to Babble") {
+                recordMode = "support"
+                monitorVM.startManualRecording()
+            }
+        } message: {
+            Text("We noticed you might be having a tough moment. You're doing an amazing job. Would you like to talk?")
         }
     }
 
@@ -169,17 +195,21 @@ struct EventListView: View {
                 )
                 .listRowBackground(Color.clear)
             } else {
-                ForEach(eventListVM.events.reversed()) { event in
-                    EventRowView(
-                        event: event,
-                        isNew: eventStore.newEventIDs.contains(event.id),
-                        isCorrected: eventStore.correctedEventIDs.contains(event.id)
-                    )
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            Task { await eventListVM.delete(event: event) }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                ForEach(eventListVM.groupedEvents, id: \.bucket) { group in
+                    Section(header: TimeBucketHeader(label: group.bucket.displayLabel)) {
+                        ForEach(group.events.reversed()) { event in
+                            EventRowView(
+                                event: event,
+                                isNew: eventStore.newEventIDs.contains(event.id),
+                                isCorrected: eventStore.correctedEventIDs.contains(event.id)
+                            )
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    Task { await eventListVM.delete(event: event) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
@@ -187,10 +217,48 @@ struct EventListView: View {
         }
         .listStyle(.plain)
         .refreshable {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            await eventListVM.refreshFromBackend(dateStr: fmt.string(from: Date()))
+            await eventListVM.refreshFromBackend(dateStr: Self.todayStr())
         }
+    }
+
+    private static let _dateFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f
+    }()
+    private static func todayStr() -> String { _dateFmt.string(from: Date()) }
+}
+
+struct EventGroup {
+    enum Bucket: String, Hashable {
+        case earlyNight = "Night (early)"
+        case morning = "Morning"
+        case afternoon = "Afternoon"
+        case evening = "Evening"
+        case lateNight = "Night"
+
+        var displayLabel: String { rawValue }
+
+        init(hour: Int) {
+            switch hour {
+            case 0...5:   self = .earlyNight
+            case 6...11:  self = .morning
+            case 12...17: self = .afternoon
+            case 18...21: self = .evening
+            default:      self = .lateNight
+            }
+        }
+    }
+    let bucket: Bucket
+    let events: [BabyEvent]
+}
+
+struct TimeBucketHeader: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .foregroundColor(.secondary)
+            .textCase(nil)
     }
 }
 
@@ -249,6 +317,10 @@ struct HoldRecordButton: View {
     let onHoldStart: () -> Void
     let onHoldEnd: (String) -> Void
 
+    // @GestureState automatically resets to false when the gesture ends or is cancelled —
+    // far more reliable than DragGesture.onEnded for detecting finger lift.
+    @GestureState private var isPressing = false
+
     var body: some View {
         Circle()
             .fill(isHolding ? Color.red : Color.accentColor)
@@ -262,6 +334,7 @@ struct HoldRecordButton: View {
             .animation(.spring(response: 0.3), value: isHolding)
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($isPressing) { _, state, _ in state = true }
                     .onChanged { _ in
                         if !isHolding {
                             isHolding = true
@@ -273,6 +346,13 @@ struct HoldRecordButton: View {
                         onHoldEnd(mode)
                     }
             )
+            .onChange(of: isPressing) { pressing in
+                // Fallback: if GestureState resets without onEnded firing
+                if !pressing && isHolding {
+                    isHolding = false
+                    onHoldEnd(mode)
+                }
+            }
     }
 }
 

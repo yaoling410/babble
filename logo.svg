@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+
+    <!-- ── Backgrounds ── -->
+    <radialGradient id="bg" cx="50%" cy="38%" r="65%">
+      <stop offset="0%"   stop-color="#FFFCF7"/>
+      <stop offset="100%" stop-color="#FFE8D0"/>
+    </radialGradient>
+
+    <!-- Baby skin -->
+    <radialGradient id="skin" cx="42%" cy="36%" r="62%">
+      <stop offset="0%"   stop-color="#FFE0C2"/>
+      <stop offset="100%" stop-color="#FFCBA4"/>
+    </radialGradient>
+
+    <!-- Log strip: warm coral → deep orange -->
+    <linearGradient id="strip" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#FF8A65"/>
+      <stop offset="100%" stop-color="#F4511E"/>
+    </linearGradient>
+
+    <!-- Shadows -->
+    <filter id="faceShad" x="-15%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="5" stdDeviation="9"
+                    flood-color="#D4784A" flood-opacity="0.22"/>
+    </filter>
+    <filter id="stripShad" x="-4%" y="-18%" width="108%" height="148%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7"
+                    flood-color="#F4511E" flood-opacity="0.28"/>
+    </filter>
+
+    <!-- Crescent moon clip (inner circle subtracted from outer) -->
+    <mask id="moonMask">
+      <rect width="400" height="400" fill="black"/>
+      <!-- outer shape white -->
+      <circle cx="154" cy="279" r="10" fill="white"/>
+      <!-- inner bite black, shifted right to create crescent -->
+      <circle cx="159" cy="278" r="7.5" fill="black"/>
+    </mask>
+
+  </defs>
+
+  <!-- ══════════════════════════════════════
+       APP ICON BACKGROUND
+       ══════════════════════════════════════ -->
+  <rect width="400" height="400" rx="90" ry="90" fill="url(#bg)"/>
+
+  <!-- ══════════════════════════════════════
+       BABY FACE
+       — establishes this is FOR BABY
+       ══════════════════════════════════════ -->
+
+  <!-- Hair tufts drawn first so the face circle clips their bases -->
+  <path d="M 187,78  Q 184,62 192,55" stroke="#7A4A28" stroke-width="5"   stroke-linecap="round" fill="none"/>
+  <path d="M 200,74  Q 200,57 200,50" stroke="#7A4A28" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+  <path d="M 213,78  Q 216,62 208,55" stroke="#7A4A28" stroke-width="5"   stroke-linecap="round" fill="none"/>
+
+  <!-- Head -->
+  <circle cx="200" cy="150" r="78" fill="url(#skin)" filter="url(#faceShad)"/>
+
+  <!-- Ears -->
+  <ellipse cx="122" cy="153" rx="11" ry="15" fill="#FFCBA4"/>
+  <ellipse cx="278" cy="153" rx="11" ry="15" fill="#FFCBA4"/>
+  <ellipse cx="122" cy="153" rx="6"  ry="9"  fill="#F2AD86" opacity="0.50"/>
+  <ellipse cx="278" cy="153" rx="6"  ry="9"  fill="#F2AD86" opacity="0.50"/>
+
+  <!-- Eyebrows -->
+  <path d="M 168,128 Q 178,122 188,126" stroke="#7A4A28" stroke-width="3"   stroke-linecap="round" fill="none"/>
+  <path d="M 212,126 Q 222,122 232,128" stroke="#7A4A28" stroke-width="3"   stroke-linecap="round" fill="none"/>
+
+  <!-- Eyes: white + dark iris + pupil shine -->
+  <ellipse cx="178" cy="144" rx="11" ry="12" fill="white"/>
+  <ellipse cx="222" cy="144" rx="11" ry="12" fill="white"/>
+  <circle  cx="178" cy="145" r="7"           fill="#2E1C10"/>
+  <circle  cx="222" cy="145" r="7"           fill="#2E1C10"/>
+  <circle  cx="181" cy="142" r="2.5"         fill="white"/>
+  <circle  cx="225" cy="142" r="2.5"         fill="white"/>
+
+  <!-- Nose (tiny soft bump) -->
+  <ellipse cx="200" cy="163" rx="4" ry="3" fill="#DDA070" opacity="0.55"/>
+
+  <!-- Cheeks (rosy blush) -->
+  <ellipse cx="152" cy="168" rx="22" ry="13" fill="#FFB0A0" opacity="0.40"/>
+  <ellipse cx="248" cy="168" rx="22" ry="13" fill="#FFB0A0" opacity="0.40"/>
+
+  <!-- Smile -->
+  <path d="M 180,175 Q 200,196 220,175"
+        stroke="#C87845" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+
+  <!-- ══════════════════════════════════════
+       ACTIVITY LOG STRIP
+       — communicates logging, organised tracking,
+         and saving time at a glance
+       ══════════════════════════════════════ -->
+  <rect x="42" y="240" width="316" height="88" rx="22"
+        fill="url(#strip)" filter="url(#stripShad)"/>
+
+  <!-- Vertical timeline spine connecting all three rows -->
+  <line x1="74" y1="260" x2="74" y2="310"
+        stroke="white" stroke-width="1.5" stroke-opacity="0.35"/>
+
+  <!-- ── Row 1: Feeding (bottle icon + text placeholder) ── -->
+  <!-- Bottle dot -->
+  <rect x="68" y="254" width="12" height="16" rx="4"  fill="white" opacity="0.90"/>
+  <rect x="71" y="250" width="6"  height="6"  rx="2.5" fill="white" opacity="0.90"/>
+  <!-- Text placeholders -->
+  <rect x="92" y="256" width="82" height="8" rx="4" fill="white" opacity="0.85"/>
+  <rect x="182" y="256" width="50" height="8" rx="4" fill="white" opacity="0.40"/>
+
+  <!-- ── Row 2: Sleep (crescent moon + text placeholder) ── -->
+  <!-- Crescent using mask -->
+  <circle cx="154" cy="279" r="10" fill="white" opacity="0.90" mask="url(#moonMask)"/>
+  <!-- (the mask renders the crescent shape by punching out the inner circle) -->
+  <!-- Text placeholders -->
+  <rect x="92" y="274" width="68" height="8" rx="4" fill="white" opacity="0.85"/>
+  <rect x="168" y="274" width="72" height="8" rx="4" fill="white" opacity="0.40"/>
+
+  <!-- ── Row 3: Logged / saved (checkmark + text placeholder) ── -->
+  <!-- Checkmark icon -->
+  <path d="M 66,302 L 71,308 L 82,292"
+        stroke="white" stroke-width="3" stroke-linecap="round"
+        stroke-linejoin="round" fill="none"/>
+  <!-- Text placeholders -->
+  <rect x="92" y="296" width="90" height="8" rx="4" fill="white" opacity="0.85"/>
+  <rect x="190" y="296" width="42" height="8" rx="4" fill="white" opacity="0.40"/>
+
+  <!-- ── Clock badge (top-right of strip) → "saves time" ── -->
+  <!-- Clock face -->
+  <circle cx="331" cy="279" r="18"
+          fill="rgba(255,255,255,0.14)" stroke="white"
+          stroke-width="2" stroke-opacity="0.75"/>
+  <!-- Minute hand (12 o'clock) -->
+  <line x1="331" y1="279" x2="331" y2="265"
+        stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.90"/>
+  <!-- Hour hand (3 o'clock) -->
+  <line x1="331" y1="279" x2="342" y2="279"
+        stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.90"/>
+  <!-- Centre dot -->
+  <circle cx="331" cy="279" r="2.5" fill="white" opacity="0.90"/>
+
+  <!-- ══════════════════════════════════════
+       WORDMARK
+       ══════════════════════════════════════ -->
+  <text
+    x="200" y="356"
+    font-family="'SF Pro Rounded', 'Arial Rounded MT Bold', Arial, sans-serif"
+    font-size="52"
+    font-weight="700"
+    letter-spacing="-1"
+    text-anchor="middle"
+    fill="#BF4B1A"
+  >babble</text>
+
+  <!-- Tagline -->
+  <text
+    x="200" y="380"
+    font-family="'SF Pro Text', 'Helvetica Neue', Arial, sans-serif"
+    font-size="13"
+    font-weight="400"
+    letter-spacing="4"
+    text-anchor="middle"
+    fill="#BF4B1A"
+    opacity="0.48"
+  >BABY TRACKER</text>
+
+</svg>

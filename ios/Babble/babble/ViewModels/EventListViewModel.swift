@@ -1,9 +1,38 @@
 import Foundation
 import Combine
 
+// ============================================================
+//  EventListViewModel.swift — Event list screen logic
+// ============================================================
+//
+//  WHERE IT FITS
+//  -------------
+//  Bridges EventStore (raw data) and EventListView (UI).
+//  Provides grouped, sorted events and handles user actions
+//  (delete, edit) by forwarding to both local EventStore and
+//  the remote backend for sync.
+//
+//  TIME GROUPING
+//  -------------
+//  Events are bucketed by time of day for visual clarity:
+//    Night (early): 00–05    Morning: 06–11
+//    Afternoon: 12–17        Evening: 18–21
+//    Night: 22–23
+//
+//  Groups are sorted by most-recent event (newest group first).
+//  Regrouping runs once per EventStore update (O(n log n)),
+//  not on every SwiftUI render pass.
+//
+//  SYNC
+//  ----
+//  refreshFromBackend() pulls events from the backend and replaces
+//  the local file. This is a simple "backend wins" strategy — the
+//  backend is authoritative because it applies Gemini corrections.
+
 @MainActor
 final class EventListViewModel: ObservableObject {
     @Published var events: [BabyEvent] = []
+    @Published var groupedEvents: [EventGroup] = []
     @Published var isRefreshing: Bool = false
 
     private let eventStore: EventStore
@@ -14,10 +43,30 @@ final class EventListViewModel: ObservableObject {
         self.eventStore = eventStore
         self.analysisService = analysisService
 
-        // Mirror EventStore's published events
+        // Mirror EventStore's published events and regroup only when the list changes.
+        // Grouping is O(n log n) — doing it here means it runs once per Gemini response,
+        // not on every SwiftUI render pass (which also fires for flash-timer updates).
         eventStore.$events
             .receive(on: RunLoop.main)
-            .assign(to: &$events)
+            .sink { [weak self] newEvents in
+                self?.events = newEvents
+                self?.groupedEvents = Self.makeGroups(from: newEvents)
+            }
+            .store(in: &cancellables)
+    }
+
+    private static func makeGroups(from events: [BabyEvent]) -> [EventGroup] {
+        var dict: [EventGroup.Bucket: [BabyEvent]] = [:]
+        let cal = Calendar.current
+        for event in events {
+            let hour = cal.component(.hour, from: event.timestamp)
+            dict[EventGroup.Bucket(hour: hour), default: []].append(event)
+        }
+        return dict.map { EventGroup(bucket: $0.key, events: $0.value) }
+            .sorted {
+                ($0.events.map(\.timestamp).max() ?? .distantPast) >
+                ($1.events.map(\.timestamp).max() ?? .distantPast)
+            }
     }
 
     // MARK: - Sync from backend

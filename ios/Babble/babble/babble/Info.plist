@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Babble connects to a local backend server to analyze audio and log baby activities.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Babble listens for your baby's name and crying to automatically log activity moments.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Babble uses on-device speech recognition to detect when your baby's name is spoken.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
