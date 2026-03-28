@@ -46,6 +46,8 @@
 		CC000001AAAA000100000005 /* AudioResampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AAAA000000000005 /* AudioResampler.swift */; };
 		CC000001AAAA000100000006 /* AgeDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AAAA000000000006 /* AgeDefaults.swift */; };
 		CC000001AAAA000100000007 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AAAA000000000007 /* ModelManager.swift */; };
+		CC000001AAAA000100000008 /* NameEnrollmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AAAA000000000008 /* NameEnrollmentService.swift */; };
+		CC000001AAAA000100000009 /* EventTypeRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AAAA000000000009 /* EventTypeRegistry.swift */; };
 		CC000002AAAA000100000001 /* MonitorViewModel+Backend.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000002AAAA000000000001 /* MonitorViewModel+Backend.swift */; };
 		CC000002AAAA000100000002 /* MonitorViewModel+OnDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000002AAAA000000000002 /* MonitorViewModel+OnDevice.swift */; };
 /* End PBXBuildFile section */
@@ -82,6 +84,8 @@
 		CC000001AAAA000000000005 /* AudioResampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioResampler.swift; sourceTree = "<group>"; };
 		CC000001AAAA000000000006 /* AgeDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeDefaults.swift; sourceTree = "<group>"; };
 		CC000001AAAA000000000007 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
+		CC000001AAAA000000000008 /* NameEnrollmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NameEnrollmentService.swift; sourceTree = "<group>"; };
+		CC000001AAAA000000000009 /* EventTypeRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventTypeRegistry.swift; sourceTree = "<group>"; };
 		CC000002AAAA000000000001 /* MonitorViewModel+Backend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MonitorViewModel+Backend.swift"; sourceTree = "<group>"; };
 		CC000002AAAA000000000002 /* MonitorViewModel+OnDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MonitorViewModel+OnDevice.swift"; sourceTree = "<group>"; };
 		99F4EEBC2F6BD07300D3FA98 /* EventListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventListViewModel.swift; sourceTree = "<group>"; };
@@ -223,6 +227,8 @@
 				CC000001AAAA000000000004 /* OnDeviceDiarizationService.swift */,
 				CC000001AAAA000000000003 /* RelevanceGate.swift */,
 				CC000001AAAA000000000002 /* WhisperKitService.swift */,
+				CC000001AAAA000000000008 /* NameEnrollmentService.swift */,
+				CC000001AAAA000000000009 /* EventTypeRegistry.swift */,
 			);
 			path = OnDevice;
 			sourceTree = "<group>";
@@ -360,6 +366,8 @@
 				CC000001AAAA000100000005 /* AudioResampler.swift in Sources */,
 				CC000001AAAA000100000006 /* AgeDefaults.swift in Sources */,
 				CC000001AAAA000100000007 /* ModelManager.swift in Sources */,
+				CC000001AAAA000100000008 /* NameEnrollmentService.swift in Sources */,
+				CC000001AAAA000100000009 /* EventTypeRegistry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

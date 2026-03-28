@@ -34,9 +34,13 @@ final class OnDevicePipeline: ObservableObject {
     // ── On-device services ──────────────────────────────────────
 
     private let whisper = WhisperKitService()
+    private lazy var analysisService = OnDeviceAnalysisService()
     private var validationTimer: Timer?      // 5-min (dedup + auto-complete)
     private var sixHourTimer: Timer?         // 6-hour pattern check
     private var dailyTimer: Timer?           // 24-hour daily review
+
+    /// Prevents concurrent Foundation Models calls (correction + analysis vs review).
+    private var isLLMBusy = false
 
     /// Counter for audio buffers received — logged periodically to confirm audio is flowing.
     private var bufferCount: Int = 0
@@ -78,16 +82,16 @@ final class OnDevicePipeline: ObservableObject {
     }
 
     // ── Caregiver mood tracking ─────────────────────────────────
-    // Track negative moods across the day. When the count exceeds
-    // the threshold, send a gentle local notification.
+    // Don't send support notifications too quickly. Requirements:
+    //   1. At least 6 hours of monitoring active
+    //   2. At least 20 mood readings total
+    //   3. 90%+ of those are negative (tired/frustrated/anxious)
+    // This avoids false alarms from a rough 30-minute patch.
 
-    /// Timestamps of negative mood detections today.
-    private var negativeMoodTimestamps: [Date] = []
+    /// All mood readings today: (timestamp, mood string).
+    private var moodReadings: [(timestamp: Date, mood: String)] = []
 
-    /// How many negative moods in a day before sending a notification.
-    private let moodNotificationThreshold = 3
-
-    /// Only send one notification per day to avoid being annoying.
+    /// Only send one notification per day.
     private var didSendMoodNotificationToday: Bool = false
 
     init() {
@@ -154,10 +158,12 @@ final class OnDevicePipeline: ObservableObject {
             state = .error("BabyProfile not configured")
             return
         }
-        // Pass language + baby name to WhisperKit for prompt biasing
+        // Pass language + baby name + enrollment variants to WhisperKit
         whisper.language = profile.whisperLanguage
         whisper.babyName = profile.babyName
-        NSLog("[OnDevice] ✅ Dependencies OK — baby='\(profile.babyName)' age=\(profile.babyAgeMonths)mo speakers=\(speakerStore?.speakers.count ?? 0) language=\(profile.whisperLanguage)")
+        whisper.ageMonths = profile.babyAgeMonths
+        whisper.nameVariants = profile.nameVariants
+        NSLog("[OnDevice] ✅ Dependencies OK — baby='\(profile.babyName)' age=\(profile.babyAgeMonths)mo speakers=\(speakerStore?.speakers.count ?? 0) language=\(profile.whisperLanguage) variants=\(profile.nameVariants.count)")
 
         // Wire audio buffer → WhisperKit
         bufferCount = 0
@@ -225,6 +231,59 @@ final class OnDevicePipeline: ObservableObject {
         state = .idle
     }
 
+    // MARK: - Name enrollment
+
+    /// Enroll the baby's name from a recorded audio clip.
+    /// Runs WhisperKit once per configured language to discover all text variants.
+    func enrollName(audioData: Data) async {
+        #if canImport(WhisperKit)
+        guard let kit = whisper.whisperKitInstance, let profile else { return }
+
+        // Save audio for later re-decoding on language change
+        if let url = NameEnrollmentService.saveEnrollmentAudio(audioData) {
+            profile.nameEnrollmentAudioPath = url.path
+        }
+
+        let samples = AudioResampler.resample48to16(wavData: audioData)
+        guard !samples.isEmpty else { return }
+
+        let languages = NameEnrollmentService.languageCodes(from: profile.whisperLanguage)
+        let variants = await NameEnrollmentService.discoverVariants(
+            audioSamples: samples,
+            whisperKit: kit,
+            languages: languages,
+            typedName: profile.babyName
+        )
+        profile.nameVariants = variants
+        whisper.nameVariants = variants
+        NSLog("[OnDevice] 🎤 Name enrolled — \(variants.count) variants: \(variants)")
+        #endif
+    }
+
+    /// Re-decode saved enrollment audio with current language settings.
+    /// Called when the user changes whisperLanguage in Settings.
+    func regenerateNameVariants() async {
+        #if canImport(WhisperKit)
+        guard let kit = whisper.whisperKitInstance, let profile else { return }
+        guard let audioPath = profile.nameEnrollmentAudioPath else {
+            NSLog("[OnDevice] ⚠️ No enrollment audio saved — skipping regeneration")
+            return
+        }
+
+        let url = URL(fileURLWithPath: audioPath)
+        let languages = NameEnrollmentService.languageCodes(from: profile.whisperLanguage)
+        let variants = await NameEnrollmentService.regenerateVariants(
+            audioPath: url,
+            whisperKit: kit,
+            languages: languages,
+            typedName: profile.babyName
+        )
+        profile.nameVariants = variants
+        whisper.nameVariants = variants
+        NSLog("[OnDevice] 🔄 Name variants regenerated — \(variants.count) variants: \(variants)")
+        #endif
+    }
+
     // MARK: - Window handling
 
     private func handleWindow(_ window: WhisperKitService.TranscriptionWindow) async {
@@ -241,7 +300,7 @@ final class OnDevicePipeline: ObservableObject {
         }
 
         lastTranscription = window.text
-        appendTranscript(window.text)
+        // Don't append raw transcript here — wait for corrected version below
 
         // Gate 1: Is the text empty?
         guard !window.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -249,30 +308,36 @@ final class OnDevicePipeline: ObservableObject {
             return
         }
 
-        // Gate 2: Relevance
+        // Gate 2: Relevance — merge manual aliases + enrollment variants
+        let allAliases = Array(Set(profile.nameAliases + profile.nameVariants))
         let relevant = RelevanceGate.isRelevant(
             text: window.text,
             babyName: profile.babyName,
-            nameAliases: profile.nameAliases,
+            nameAliases: allAliases,
             isOnlyBaby: profile.isOnlyBaby
         )
         guard relevant else {
             NSLog("[OnDevice] 🚫 Gate 2 BLOCKED — not baby-related: '\(window.text.prefix(80))'")
+            // Still store raw transcript as context — helps the LLM corrector
+            // understand conversation flow even for non-baby windows
+            appendTranscript(window.text)
             return
         }
         NSLog("[OnDevice] ✅ Gate 2 PASSED — baby-related, proceeding to diarize+analyze")
 
         state = .processing
 
-        // Step 3: Diarize
+        // Step 3: Diarize (off main thread — segmentation is CPU-heavy)
+        // SpeakerKit's embedding API is internal, so we can't match against
+        // enrolled profiles yet. Labels are anonymous (SPEAKER_0, SPEAKER_1)
+        // but still useful for separating who said what.
         let annotatedTranscript: String
-        if let speakerStore, !speakerStore.speakers.isEmpty {
-            NSLog("[OnDevice] 🎙️ Step 3: Diarizing with \(speakerStore.speakers.count) enrolled speakers...")
+        if speakerStore != nil {
+            NSLog("[OnDevice] 🎙️ Step 3: Diarizing speakers...")
             do {
-                let result = try await OnDeviceDiarizationService.diarize(
-                    window: window,
-                    speakerStore: speakerStore
-                )
+                let result = try await Task.detached {
+                    try await OnDeviceDiarizationService.diarize(window: window)
+                }.value
                 annotatedTranscript = result.annotatedTranscript
                 NSLog("[OnDevice] ✅ Diarized — \(result.segments.count) segments, \(result.unknownSpeakers.count) unknown")
                 for seg in result.segments {
@@ -288,21 +353,45 @@ final class OnDevicePipeline: ObservableObject {
         }
 
         // Step 4a: Correct transcript with Foundation Models
+        guard !isLLMBusy else {
+            NSLog("[OnDevice] ⏳ LLM busy — skipping this window")
+            state = .listening
+            return
+        }
+        isLLMBusy = true
+        defer { isLLMBusy = false }
+
         let dateStr = Self.todayStr()
-        let service = OnDeviceAnalysisService()
+        let service = analysisService
 
         let recentContext = last20MinTranscript()
-        let correctedTranscript: String
-        do {
-            correctedTranscript = try await service.correctTranscript(
-                raw: annotatedTranscript,
-                babyName: profile.babyName,
-                recentContext: recentContext
-            )
-        } catch {
-            NSLog("[OnDevice] ⚠️ Transcript correction failed: \(error) — using original")
-            correctedTranscript = annotatedTranscript
+        let babyName = profile.babyName
+        let ageMonths = profile.babyAgeMonths
+
+        // Run LLM correction off the main thread to keep UI responsive.
+        let correctedTranscript: String = await Task.detached {
+            do {
+                return try await service.correctTranscript(
+                    raw: annotatedTranscript,
+                    babyName: babyName,
+                    recentContext: recentContext
+                )
+            } catch {
+                NSLog("[OnDevice] ⚠️ Transcript correction failed: \(error) — using original")
+                return annotatedTranscript
+            }
+        }.value
+
+        // Empty = LLM determined the transcript is noise/gibberish
+        guard !correctedTranscript.isEmpty else {
+            NSLog("[OnDevice] 🚫 Transcript discarded as noise — skipping analysis")
+            state = .listening
+            return
         }
+
+        // Store corrected transcript as context for future corrections.
+        appendTranscript(correctedTranscript)
+        lastTranscription = correctedTranscript
 
         // Step 4b: Extract events from corrected transcript
         NSLog("[OnDevice] 🧠 Step 4b: Foundation Models event extraction — '\(correctedTranscript.prefix(80))'")
@@ -311,21 +400,21 @@ final class OnDevicePipeline: ObservableObject {
             service.onEmotionalSupportNeeded = { [weak self] in
                 NSLog("[OnDevice] 💛 Emotional support needed — surfacing to UI")
                 self?.emotionalSupportDetected = true
-                self?.trackNegativeMood()
             }
             service.onMoodDetected = { [weak self] mood in
-                if mood != "ok" && mood != "happy" {
-                    NSLog("[OnDevice] 😔 Negative mood tracked: \(mood)")
-                    self?.trackNegativeMood()
-                }
+                self?.recordMood(mood)
             }
-            let response = try await service.analyze(
-                transcript: correctedTranscript,
-                babyName: profile.babyName,
-                ageMonths: profile.babyAgeMonths,
-                triggerHint: "continuous",
-                clipTimestamp: window.startTime
-            )
+            let clipTimestamp = window.startTime
+            // Run LLM extraction off the main thread
+            let response = try await Task.detached {
+                try await service.analyze(
+                    transcript: correctedTranscript,
+                    babyName: babyName,
+                    ageMonths: ageMonths,
+                    triggerHint: "continuous",
+                    clipTimestamp: clipTimestamp
+                )
+            }.value
 
             if response.newEvents.isEmpty {
                 NSLog("[OnDevice] ℹ️ Analysis returned 0 events (relevant but no extractable activity)")
@@ -337,7 +426,6 @@ final class OnDevicePipeline: ObservableObject {
                 eventStore.apply(response: response, dateStr: dateStr)
                 NSLog("[OnDevice] 💾 Events saved to EventStore")
 
-                // Track event burst — trigger early validation if many events pile up
                 checkForEventBurst(newEventCount: response.newEvents.count)
             }
         } catch {
@@ -376,11 +464,9 @@ final class OnDevicePipeline: ObservableObject {
         sixHourTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.run6HourValidation() }
         }
-        // Daily: end-of-day review (run at first 5-min tick after 20:00)
-        dailyTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.checkDailyReview() }
-        }
-        NSLog("[OnDevice] ⏰ Validation timers started — 5min (housekeeping) + 6hr (patterns) + daily (review)")
+        // Daily: schedule once for 8 PM (not polling every 5 min)
+        scheduleDailyReview()
+        NSLog("[OnDevice] ⏰ Validation timers started — 5min (housekeeping) + 6hr (patterns) + daily (8 PM)")
     }
 
     // ── Tier 1: Every 5 minutes ─────────────────────────────────
@@ -527,27 +613,65 @@ final class OnDevicePipeline: ObservableObject {
     // Only runs if there are both events AND transcripts to compare.
 
     private func reviewRecentEvents() async {
+        guard !isLLMBusy else {
+            NSLog("[OnDevice] 🔍 Review skipped — LLM busy with window analysis")
+            return
+        }
         guard let eventStore, let profile else { return }
+        isLLMBusy = true
+        defer { isLLMBusy = false }
         let now = Date()
         let windowStart = now.addingTimeInterval(-20 * 60)
+        let dateStr = Self.todayStr()
 
         let recentEvents = eventStore.events.filter {
             ($0.createdAt ?? $0.timestamp) >= windowStart
         }
+        guard !recentEvents.isEmpty else { return }
+
+        // Step 1: Deterministic merge — combine duplicate events of same type
+        // logged multiple times. Merges details, source quotes, and timestamps.
+        let mergeResult = analysisService.mergeEvents(events: recentEvents)
+        if !mergeResult.idsToDelete.isEmpty {
+            NSLog("[OnDevice] 🔀 Merge: combining \(mergeResult.idsToDelete.count) duplicate events")
+            for id in mergeResult.idsToDelete {
+                eventStore.delete(id: id, dateStr: dateStr)
+            }
+            for update in mergeResult.updates {
+                if var event = eventStore.events.first(where: { $0.id == update.id }) {
+                    event.detail = update.detail
+                    event.confidence = update.confidence
+                    event.sourceQuote = update.sourceQuote
+                    eventStore.update(event, dateStr: dateStr)
+                }
+            }
+        }
+
+        // Step 2: LLM review — only if we have transcript context
         let context = last20MinTranscript()
+        guard !context.isEmpty else { return }
 
-        guard !recentEvents.isEmpty, !context.isEmpty else { return }
+        // Derive post-merge list by removing deleted IDs — avoids re-filtering eventStore
+        let deletedIds = Set(mergeResult.idsToDelete)
+        let postMergeEvents = recentEvents.filter { !deletedIds.contains($0.id) }
+        guard !postMergeEvents.isEmpty else { return }
 
-        NSLog("[OnDevice] 🔍 Review: checking \(recentEvents.count) events against \(recentTranscripts.count) transcripts")
+        NSLog("[OnDevice] 🔍 Review: checking \(postMergeEvents.count) events against \(recentTranscripts.count) transcripts")
+
+        let service = analysisService
+        let babyName = profile.babyName
+        let ageMonths = profile.babyAgeMonths
 
         do {
-            let service = OnDeviceAnalysisService()
-            let corrections = try await service.reviewEvents(
-                events: recentEvents,
-                transcriptContext: context,
-                babyName: profile.babyName,
-                ageMonths: profile.babyAgeMonths
-            )
+            // Run LLM review off the main thread
+            let corrections = try await Task.detached {
+                try await service.reviewEvents(
+                    events: postMergeEvents,
+                    transcriptContext: context,
+                    babyName: babyName,
+                    ageMonths: ageMonths
+                )
+            }.value
 
             guard !corrections.isEmpty else {
                 NSLog("[OnDevice] 🔍 Review: all events look correct")
@@ -559,7 +683,6 @@ final class OnDevicePipeline: ObservableObject {
                 NSLog("[OnDevice]   ✏️ \(corr.eventId.prefix(8)) → \(corr.action.rawValue): \(corr.reason ?? "")")
             }
 
-            let dateStr = Self.todayStr()
             let response = AnalyzeResponse(newEvents: [], corrections: corrections)
             eventStore.apply(response: response, dateStr: dateStr)
         } catch {
@@ -660,21 +783,31 @@ final class OnDevicePipeline: ObservableObject {
     //
     // Full-day pattern assessment. Compares totals against age norms.
 
-    private var didRunDailyReviewToday = false
-
-    private func checkDailyReview() {
-        let hour = Calendar.current.component(.hour, from: Date())
-        guard hour >= 20, !didRunDailyReviewToday else { return }
-        guard monitoringActiveHours() >= 6 else { return }
-
-        // Reset flag at midnight
-        if let start = monitoringStartTime,
-           !Calendar.current.isDate(start, inSameDayAs: Date()) {
-            didRunDailyReviewToday = false
+    /// Schedule a one-shot timer for 8 PM today (or tomorrow if past 8 PM).
+    /// Avoids polling every 5 minutes just to check the clock.
+    private func scheduleDailyReview() {
+        let cal = Calendar.current
+        let now = Date()
+        var target = cal.date(bySettingHour: 20, minute: 0, second: 0, of: now) ?? now
+        if target <= now {
+            // Already past 8 PM today — schedule for tomorrow
+            target = cal.date(byAdding: .day, value: 1, to: target) ?? now
         }
+        let delay = target.timeIntervalSince(now)
+        NSLog("[OnDevice] 📋 Daily review scheduled in \(String(format: "%.0f", delay / 3600))h \(String(format: "%.0f", (delay.truncatingRemainder(dividingBy: 3600)) / 60))m")
 
-        didRunDailyReviewToday = true
-        runDailyReview()
+        dailyTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.monitoringActiveHours() >= 6 {
+                    self.runDailyReview()
+                } else {
+                    NSLog("[OnDevice] 📋 Daily review skipped — only \(String(format: "%.1f", self.monitoringActiveHours()))h active (need 6h+)")
+                }
+                // Schedule next day
+                self.scheduleDailyReview()
+            }
+        }
     }
 
     private func runDailyReview() {
@@ -773,24 +906,35 @@ final class OnDevicePipeline: ObservableObject {
     // MARK: - Caregiver mood tracking & notifications
 
     /// Record a negative mood detection. When the count exceeds the daily
-    /// threshold, send a gentle local notification.
-    private func trackNegativeMood() {
+    /// Record every mood reading. Checks if support notification should fire.
+    /// Criteria: 6h+ active, 20+ readings, 90%+ negative.
+    private func recordMood(_ mood: String) {
         let now = Date()
 
-        // Reset if it's a new day
-        if let first = negativeMoodTimestamps.first,
-           !Calendar.current.isDate(first, inSameDayAs: now) {
-            negativeMoodTimestamps.removeAll()
+        // Reset if new day
+        if let first = moodReadings.first,
+           !Calendar.current.isDate(first.timestamp, inSameDayAs: now) {
+            moodReadings.removeAll()
             didSendMoodNotificationToday = false
         }
 
-        negativeMoodTimestamps.append(now)
-        NSLog("[OnDevice] 💛 Negative mood count today: \(negativeMoodTimestamps.count)/\(moodNotificationThreshold)")
+        moodReadings.append((timestamp: now, mood: mood))
 
+        let total = moodReadings.count
+        let negative = moodReadings.filter { $0.mood != "ok" && $0.mood != "happy" }.count
+        let ratio = total > 0 ? Double(negative) / Double(total) : 0
+
+        NSLog("[OnDevice] 💛 Mood: \(mood) | today: \(negative)/\(total) negative (\(Int(ratio * 100))%)")
+
+        // All 3 conditions must be met:
         guard !didSendMoodNotificationToday,
-              negativeMoodTimestamps.count >= moodNotificationThreshold else { return }
+              monitoringActiveHours() >= 6,  // 1. at least 6 hours active
+              total >= 20,                    // 2. at least 20 readings
+              ratio >= 0.9                    // 3. 90%+ are negative
+        else { return }
 
         didSendMoodNotificationToday = true
+        NSLog("[OnDevice] 💛 Support notification triggered — \(negative)/\(total) negative over \(String(format: "%.1f", monitoringActiveHours()))h")
         sendSupportNotification()
     }
 
@@ -811,7 +955,6 @@ final class OnDevicePipeline: ObservableObject {
         content.sound = .default
         content.categoryIdentifier = "CAREGIVER_SUPPORT"
 
-        // Fire in 5 seconds (not immediately — give a gentle delay)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
         let request = UNNotificationRequest(
             identifier: "caregiver-support-\(Self.todayStr())",

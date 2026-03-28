@@ -18,7 +18,7 @@ import FoundationModels
 @available(iOS 26.0, *)
 @Generable
 struct ExtractedEvent {
-	@Guide(description: "Type of baby event. One of: feeding, sleep, diaper, health_note, milestone, mood, activity, play, cry, new_food, observation")
+	@Guide(description: "Type of baby event. One of: feeding, sleep, diaper, health_note, milestone, mood, activity, play, cry, new_food, observation. IMPORTANT: only use 'milestone' when the speaker sounds excited or surprised about a FIRST TIME achievement (e.g. 'Oh my god he just walked!' or '他会叫妈妈了！太棒了!'). Normal activities like saying a word or playing are NOT milestones — use 'observation' instead.")
 	var type: String
 
 	@Guide(description: "More specific classification. For feeding: breast/bottle/solids/pumping. For diaper: wet/dirty/mixed. For sleep: nap/night. For activity: tummy_time/bath/outing. For play: sensory/toys/reading/music/free_play/tummy_time. Leave empty if not applicable.")
@@ -36,7 +36,7 @@ struct ExtractedEvent {
 	@Guide(description: "The exact phrase from the transcript that produced this event. Quote the relevant part verbatim.")
 	var sourceQuote: String?
 
-	@Guide(description: "Who reported this event if identifiable from the transcript (e.g. 'Mom', 'Dad', 'Nanny'). Leave empty if unknown.")
+	@Guide(description: "Who reported this event if identifiable from context (e.g. 'Mom', 'Dad'). Leave empty if unknown.")
 	var speaker: String?
 
 	@Guide(description: "Event status: 'in_progress' if still happening (e.g. nap started), 'completed' if finished, 'tentative' if uncertain. Default to 'completed'.")
@@ -78,21 +78,18 @@ struct TranscriptAnalysis {
 @available(iOS 26.0, *)
 @Generable
 struct CorrectedTranscript {
-	@Guide(description: "The corrected, clean transcript. Fix ASR errors, add punctuation, fix wrong characters, remove hallucinated phrases. Keep the original meaning.")
+	@Guide(description: "The corrected, clean transcript. Fix ASR errors, add punctuation, fix wrong characters, remove hallucinated phrases. If the text is pure nonsense/noise, return empty string.")
 	var corrected: String
 
-	@Guide(description: "true if corrections were made, false if original was clean.")
-	var wasChanged: Bool
+	@Guide(description: "true if the transcript contains meaningful speech in any language. false if it is random noise, gibberish, or nonsensical fragments that don't form any real words or sentences in any language.")
+	var isMeaningful: Bool
 }
 
 @available(iOS 26.0, *)
-@MainActor
-final class OnDeviceAnalysisService {
+final class OnDeviceAnalysisService: @unchecked Sendable {
 	static var isAvailable: Bool {
 		SystemLanguageModel.default.isAvailable
 	}
-
-	private var session: LanguageModelSession?
 
 	/// Called when the caregiver sounds distressed.
 	var onEmotionalSupportNeeded: (() -> Void)?
@@ -111,35 +108,53 @@ final class OnDeviceAnalysisService {
 		babyName: String,
 		recentContext: String
 	) async throws -> String {
-		let session = self.session ?? LanguageModelSession()
-		self.session = session
+		// Use a fresh session each time to avoid exceeding the 4096-token context limit.
+		let session = LanguageModelSession()
+
+		// Build list of words that sound like the baby's name so the LLM
+		// knows to fix them. Uses PhoneticMatcher's consonant-skeleton: any
+		// word with the same code as the baby name is a likely mishearing.
+		// This generalizes across all names and accents — no hardcoding.
+		let nameHint: String
+		if !babyName.isEmpty {
+			// Use enrollment-discovered name variants + phonetic aliases
+			let aliases = BabyProfile.defaultAliases(for: babyName.lowercased())
+			if aliases.isEmpty {
+				nameHint = "ASR often mishears the baby's name — fix words that sound like \"\(babyName)\"."
+			} else {
+				let examples = aliases.prefix(5).joined(separator: ", ")
+				nameHint = "ASR often mishears \"\(babyName)\" as: \(examples). Fix these to \"\(babyName)\" when about the baby."
+			}
+		} else {
+			nameHint = ""
+		}
 
 		let prompt = """
-		Fix this voice-to-text transcript. The speaker is talking about a baby named \(babyName).
+		Fix this voice transcript for baby \(babyName). English+Chinese mix is normal. \
+		Set isMeaningful=false if noise/gibberish. Only fix errors, keep meaning. \
+		\(nameHint)
 
-		Fix these ASR errors:
-		- Baby name misspelled: "陆卡", "露卡", "Localash" → "\(babyName)"
-		- Wrong characters: 拍隔→拍嗝(burp), 拉死→拉屎(poop), 味奶→喂奶(feed)
-		- Remove hallucinations: "謝謝觀看", "谢谢观看", "请订阅", "Thank you for watching"
-		- Add punctuation at natural sentence breaks
-		- Keep English+Chinese mixing as-is (that's intentional)
-		- Do NOT change meaning, only fix errors
+		Context: \(recentContext.prefix(200))
 
-		Recent context:
-		\(recentContext.prefix(500))
-
-		Raw transcript to fix:
-		\(raw)
+		Fix: \(raw.prefix(500))
 		"""
 
 		let response = try await session.respond(to: prompt, generating: CorrectedTranscript.self)
 		let result = response.content
 
-		if result.wasChanged {
-			NSLog("[OnDevice] ✏️ Transcript corrected: '\(raw.prefix(60))' → '\(result.corrected.prefix(60))'")
+		// If the LLM says the text is meaningless noise, return empty
+		if !result.isMeaningful {
+			NSLog("[OnDevice] 🚫 Transcript is noise/gibberish — discarding: '\(raw.prefix(60))'")
+			return ""
 		}
 
-		return result.corrected.isEmpty ? raw : result.corrected
+		let corrected = result.corrected
+		if !corrected.isEmpty && corrected != raw {
+			NSLog("[OnDevice] ✏️ Transcript corrected: '\(raw.prefix(60))' → '\(corrected.prefix(60))'")
+			return corrected
+		}
+
+		return raw
 	}
 
 	// MARK: - Step 2: Extract events
@@ -151,59 +166,31 @@ final class OnDeviceAnalysisService {
 		triggerHint: String,
 		clipTimestamp: Date
 	) async throws -> AnalyzeResponse {
-		let session = self.session ?? LanguageModelSession()
-		self.session = session
+		let session = LanguageModelSession()
 
 		let ageSuffix: String
 		if ageMonths < 1 { ageSuffix = "newborn" }
 		else if ageMonths == 1 { ageSuffix = "1 month old" }
 		else { ageSuffix = "\(ageMonths) months old" }
 
-		let config = AgeDefaults.eventConfig(ageMonths: ageMonths)
-		let allowedTypesStr = config.allowedTypes.sorted().joined(separator: ", ")
-		let vocabStr = config.chineseVocab.map { "  " + $0 }.joined(separator: "\n")
-		let notesStr = config.notes.map { "- " + $0 }.joined(separator: "\n")
+		let allowedTypesStr = EventTypeRegistry.allowedTypesString(ageMonths: ageMonths)
+		let vocabStr = EventTypeRegistry.chineseVocabForPrompt(ageMonths: ageMonths).prefix(8).joined(separator: "; ")
 
 		let prompt = """
-		You are a baby care assistant. Extract events from this caregiver \
-		conversation about a baby named \(babyName) (\(ageSuffix)).
+		Extract baby events from transcript. Baby: \(babyName), \(ageSuffix). \
+		Allowed types: \(allowedTypesStr). \
+		Set relevant=false if not about baby. Only extract explicitly stated events. \
+		Do NOT extract "cry" — use mood instead. Default mood="ok", needsSupport=false.
 
-		ALLOWED EVENT TYPES for this age:
-		\(allowedTypesStr)
-		Do NOT extract any event type not in this list.
+		Learning rules: teaching words = activity (subtype: learning). \
+		Baby saying a word = observation. First time + excitement = milestone.
 
-		CRITICAL RULES:
-		- ONLY extract events EXPLICITLY stated in the transcript.
-		- If the transcript says "拉屎了" (pooped), extract ONLY a diaper event. \
-		  Do NOT invent a feeding, sleep, or any other event that was not mentioned.
-		- If only one action is mentioned, return ONLY one event.
-		- Multiple events from one sentence are OK, but ONLY if each is explicitly stated.
-		- Ignore repeated/garbled speech recognition errors \
-		  (e.g. "有点卡, 有点卡, 有点卡" — treat as said once).
-		- Use short detail text. Do NOT invent amounts, durations, or specifics not stated.
-		- Do NOT hallucinate events. If unsure, return 0 events.
-		- Set confidence to 0.9 for clearly stated, 0.5 for uncertain.
+		Vocab: \(vocabStr)
 
-		Age-specific notes:
-		\(notesStr)
-
-		Chinese vocabulary → event mapping:
-		\(vocabStr)
-
-		Caregiver mood detection:
-		- "ok" = neutral, just reporting facts
-		- "tired" = 好累/so tired/没睡好/exhausted
-		- "frustrated" = 受不了了/why won't you stop/烦死了
-		- "anxious" = 怎么办/is this normal/担心
-		- "happy" = 好可爱/so cute/好开心
-		- needsSupport = true ONLY for genuine distress
-		- Default: mood="ok", needsSupport=false
-
-		Transcript:
-		\(transcript)
+		Transcript: \(transcript.prefix(500))
 		"""
 
-		NSLog("[OnDevice] 🧠 Sending to Foundation Models: '\(prompt.suffix(200))'")
+		NSLog("[OnDevice] 🧠 Sending to Foundation Models: prompt ~\(prompt.count) chars, transcript ~\(transcript.count) chars")
 
 		let response = try await session.respond(
 			to: prompt,
@@ -295,87 +282,107 @@ final class OnDeviceAnalysisService {
 		// ── Post-extraction validation pipeline ──────────────────
 		var validated = events
 
-		// 1. Age filter: reject types not allowed for this age
-		validated = validated.filter { config.allowedTypes.contains($0.type.rawValue) }
-		if validated.count < events.count {
-			NSLog("[OnDevice] 🚫 Age filter: \(events.count) → \(validated.count)")
+		// 1. Confidence gate: single event needs >= 0.7, multiple events need >= 0.85 each.
+		//    This prevents the 3B model from sneaking in low-confidence hallucinations
+		//    alongside a real event.
+		let confidenceThreshold: Float = events.count == 1 ? 0.7 : 0.85
+		validated = validated.filter { event in
+			let conf = event.confidence ?? 0
+			if conf < confidenceThreshold {
+				NSLog("[OnDevice] 🚫 Confidence filter: rejected \(event.type.rawValue) '\(event.detail.prefix(40))' — \(String(format: "%.2f", conf)) < \(String(format: "%.2f", confidenceThreshold)) (threshold for \(events.count) events)")
+				return false
+			}
+			return true
 		}
 
-		// 2. Keyword validation: certain event types require specific words in the transcript
+		// 2. Age filter: if the model returns a type not in the allowed list,
+		//    convert it to a notable milestone (could be a developmental surprise)
+		let allowedTypes = EventTypeRegistry.allowedTypes(ageMonths: ageMonths)
+		validated = validated.map { event in
+			if allowedTypes.contains(event.type.rawValue) {
+				return event
+			}
+			NSLog("[OnDevice] ⭐ Age reclassify: \(event.type.rawValue) → milestone (unexpected for \(ageMonths)mo, confidence=\(String(format: "%.2f", event.confidence ?? 0)))")
+			var milestone = event
+			milestone.type = .milestone
+			milestone.notable = true
+			milestone.detail = "\(event.type.displayName): \(event.detail)"
+			return milestone
+		}
+
+		// 3. Milestone gate: demote milestones to observations unless the transcript
+		//    shows genuine excitement (exclamation marks, celebratory words).
+		//    Normal activities like saying a word are observations, not milestones.
+		validated = Self.milestoneGate(events: validated, transcript: transcript)
+
+		// 4. Keyword validation: certain event types require specific words in the transcript
 		validated = Self.keywordValidate(events: validated, transcript: transcript)
 
-		// 3. Intent filter: reject events if the transcript is a question, negation,
+		// 5. Intent filter: reject events if the transcript is a question, negation,
 		//    or hypothetical — not a factual report of something that happened
 		validated = Self.intentValidate(events: validated, transcript: transcript)
 
-		// 4. Dedup: collapse identical events (same type+subtype+detail)
+		// 6. Dedup: collapse identical events (same type+subtype+detail)
 		var seen: Set<String> = []
 		validated = validated.filter { event in
 			let key = "\(event.type.rawValue)|\(event.subtype ?? "")|\(event.detail)"
 			return seen.insert(key).inserted
 		}
 
-		// 4. Temporal logic: no two events of the same type within 1 min
+		// 7. Temporal logic: no two events of the same type within 1 min
 		//    unless one is in_progress and the other is completed (start→end pair)
 		validated = Self.temporalValidate(events: validated)
 
 		return AnalyzeResponse(newEvents: validated, corrections: [])
 	}
 
+	// MARK: - Milestone gate
+	//
+	// Milestones should only be created when the caregiver sounds genuinely
+	// excited or surprised — indicating a first-time achievement. Normal
+	// activities (baby says a word, plays with a toy) are observations.
+	// Without excitement markers, demote milestone → observation.
+
+	private static let excitementMarkers: [String] = [
+		// Chinese
+		"太棒了", "太厉害了", "好棒", "厉害", "第一次", "终于",
+		"天哪", "我的天", "不敢相信", "哇", "耶",
+		// English
+		"first time", "for the first time", "finally",
+		"oh my god", "omg", "amazing", "wow", "yay",
+		"can you believe", "i can't believe",
+		// Punctuation — exclamation marks signal excitement
+		"！", "!",
+	]
+
+	private static func milestoneGate(events: [BabyEvent], transcript: String) -> [BabyEvent] {
+		let lower = transcript.lowercased()
+		let hasExcitement = excitementMarkers.contains { lower.contains($0) }
+
+		if hasExcitement { return events } // excitement detected, allow milestones
+
+		return events.map { event in
+			guard event.type == .milestone else { return event }
+			NSLog("[OnDevice] 🚫 Milestone demoted → observation (no excitement in transcript): '\(event.detail.prefix(40))'")
+			var demoted = event
+			demoted.type = .observation
+			demoted.notable = false
+			return demoted
+		}
+	}
+
 	// MARK: - Keyword validation
 	//
-	// For high-stakes event types (diaper, feeding, sleep), the transcript
-	// MUST contain at least one keyword that actually describes the event.
-	// This prevents the 3B model from hallucinating events from unrelated speech.
-	// E.g. "怎么又diaper change了" is a question, not a new diaper event —
-	// but it contains "diaper change" so it passes. The key is that pure
-	// commentary without ANY relevant word gets blocked.
-
-	private static let diaperKeywords: Set<String> = [
-		// Chinese
-		"拉屎", "拉臭", "拉粑", "便便", "大便", "小便", "尿了", "尿湿",
-		"换尿布", "换片", "尿布", "纸尿裤", "屙屎", "屙尿",
-		"上厕所", "坐马桶", "拉了",
-		// English
-		"poop", "pooped", "pooping", "pee", "peed", "peeing",
-		"diaper", "nappy", "blowout", "potty",
-	]
-
-	private static let feedingKeywords: Set<String> = [
-		// Chinese
-		"喂奶", "吃奶", "喝奶", "喝水", "吃饭", "吃东西", "辅食",
-		"喝完", "吃完", "饿了", "奶瓶", "母乳", "配方",
-		"喂食", "吃了", "喝了",
-		// English
-		"feed", "feeding", "fed", "bottle", "breast", "nursing",
-		"ate", "eat", "eating", "milk", "formula", "solids",
-		"hungry", "drink", "drank",
-	]
-
-	private static let sleepKeywords: Set<String> = [
-		// Chinese
-		"睡觉", "睡着", "睡了", "醒了", "醒来", "起来了",
-		"午睡", "小睡", "困了", "入睡", "哄睡",
-		"夜醒", "夜奶", "睡眠",
-		// English
-		"sleep", "sleeping", "slept", "nap", "napping", "napped",
-		"woke", "awake", "asleep", "drowsy", "bedtime",
-	]
+	// Uses EventTypeRegistry.validationKeywords() as single source of truth.
+	// Types without validation keywords pass freely.
 
 	private static func keywordValidate(events: [BabyEvent], transcript: String) -> [BabyEvent] {
 		let lower = transcript.lowercased()
 		return events.filter { event in
-			let keywords: Set<String>?
-			switch event.type {
-			case .diaper:  keywords = diaperKeywords
-			case .feeding: keywords = feedingKeywords
-			case .sleep:   keywords = sleepKeywords
-			default:       keywords = nil  // other types don't need keyword validation
+			guard let keywords = EventTypeRegistry.validationKeywords(for: event.type.rawValue) else {
+				return true
 			}
-
-			guard let required = keywords else { return true }
-
-			let found = required.contains { lower.contains($0) }
+			let found = keywords.contains { lower.contains($0) }
 			if !found {
 				NSLog("[OnDevice] 🚫 Keyword filter: rejected \(event.type.rawValue) '\(event.detail.prefix(40))' — no matching keyword in transcript")
 			}
@@ -501,6 +508,114 @@ final class OnDeviceAnalysisService {
 	//   - "oh wait she didn't actually poop" → delete the diaper event
 	//   - Misheard events that made it past the initial extraction
 
+	// MARK: - Merge duplicate events (deterministic, no LLM)
+	//
+	// Groups events by type+subtype within a time window. If the same event
+	// type appears multiple times, merge them into one:
+	//   - Keep the earliest timestamp as start time
+	//   - Keep the latest timestamp as end time (stored in detail)
+	//   - Keep the highest confidence
+	//   - Combine details
+	//   - Delete the duplicates
+	//
+	// Returns: (survivorUpdates, idsToDelete)
+	//   survivorUpdates: events to update (merged detail + timestamps)
+	//   idsToDelete: event IDs to remove
+
+	struct MergeResult {
+		var updates: [(id: String, detail: String, confidence: Float, sourceQuote: String?)]
+		var idsToDelete: [String]
+	}
+
+	func mergeEvents(
+		events: [BabyEvent],
+		windowMinutes: Double = 20
+	) -> MergeResult {
+		var updates: [(id: String, detail: String, confidence: Float, sourceQuote: String?)] = []
+		var idsToDelete: [String] = []
+
+		// Group by type + subtype
+		var groups: [String: [BabyEvent]] = [:]
+		for event in events {
+			let key = "\(event.type.rawValue)|\(event.subtype ?? "")"
+			groups[key, default: []].append(event)
+		}
+
+		for (key, group) in groups {
+			guard group.count >= 2 else { continue }
+			let sorted = group.sorted { $0.timestamp < $1.timestamp }
+
+			// Find clusters: events within 5 min of each other
+			var clusters: [[BabyEvent]] = []
+			var currentCluster: [BabyEvent] = [sorted[0]]
+
+			for i in 1..<sorted.count {
+				let gap = sorted[i].timestamp.timeIntervalSince(sorted[i-1].timestamp)
+				if gap < 5 * 60 {
+					currentCluster.append(sorted[i])
+				} else {
+					clusters.append(currentCluster)
+					currentCluster = [sorted[i]]
+				}
+			}
+			clusters.append(currentCluster)
+
+			// Merge each cluster with 2+ events
+			for cluster in clusters where cluster.count >= 2 {
+				let survivor = cluster[0]
+				let duplicates = Array(cluster.dropFirst())
+
+				let startTime = survivor.timestamp
+				let endTime = cluster.last!.timestamp
+				let duration = endTime.timeIntervalSince(startTime)
+
+				let durationStr: String
+				if duration < 60 {
+					durationStr = "\(Int(duration))s"
+				} else {
+					durationStr = "\(Int(duration / 60))m"
+				}
+
+				// Merge details — collect unique details from all events in cluster
+				let allDetails = cluster.map { $0.detail }
+				let uniqueDetails = allDetails.reduce(into: [String]()) { result, detail in
+					if !result.contains(where: { $0.lowercased() == detail.lowercased() }) {
+						result.append(detail)
+					}
+				}
+				let combinedDetail: String
+				if uniqueDetails.count == 1 {
+					// All same detail — add duration if meaningful
+					combinedDetail = duration > 30
+						? "\(uniqueDetails[0]) (\(durationStr))"
+						: uniqueDetails[0]
+				} else {
+					// Different details — join them
+					combinedDetail = uniqueDetails.joined(separator: "; ")
+						+ (duration > 30 ? " (\(durationStr))" : "")
+				}
+
+				// Merge source quotes — combine all transcripts
+				let allQuotes = cluster.compactMap { $0.sourceQuote }.filter { !$0.isEmpty }
+				let uniqueQuotes = allQuotes.reduce(into: [String]()) { result, quote in
+					if !result.contains(quote) { result.append(quote) }
+				}
+				let mergedQuote: String? = uniqueQuotes.isEmpty ? nil : uniqueQuotes.joined(separator: " | ")
+
+				let maxConfidence = cluster.map { $0.confidence ?? 0 }.max() ?? 0
+
+				updates.append((id: survivor.id, detail: combinedDetail, confidence: maxConfidence, sourceQuote: mergedQuote))
+				idsToDelete.append(contentsOf: duplicates.map { $0.id })
+
+				NSLog("[OnDevice] 🔀 Merge: \(key) — \(cluster.count) events → 1 (span \(durationStr), details: \(uniqueDetails.count) unique)")
+			}
+		}
+
+		return MergeResult(updates: updates, idsToDelete: idsToDelete)
+	}
+
+	// MARK: - LLM review (corrections/deletions based on transcript context)
+
 	func reviewEvents(
 		events: [BabyEvent],
 		transcriptContext: String,
@@ -509,30 +624,21 @@ final class OnDeviceAnalysisService {
 	) async throws -> [EventCorrection] {
 		guard !events.isEmpty, !transcriptContext.isEmpty else { return [] }
 
-		let session = self.session ?? LanguageModelSession()
-		self.session = session
+		let session = LanguageModelSession()
 
-		let eventSummary = events.map { event in
-			"[\(event.id.prefix(8))] \(event.type.rawValue) \(event.timestamp.formatted(date: .omitted, time: .shortened)): \(event.detail)"
+		// Keep only the most recent 5 events to stay within the 4096-token context limit.
+		let recentEvents = events.suffix(5)
+		let eventSummary = recentEvents.map { event in
+			"[\(event.id.prefix(8))] \(event.type.rawValue) \(event.timestamp.formatted(date: .omitted, time: .shortened)): \(event.detail.prefix(60))"
 		}.joined(separator: "\n")
 
 		let prompt = """
-		You are reviewing baby events for accuracy. Baby: \(babyName), \(ageMonths) months old.
+		Review these baby events for \(babyName). Correct or delete only if \
+		the transcript shows a factual correction. Return empty corrections if OK.
 
-		These events were logged in the last 20 minutes:
-		\(eventSummary)
+		Events: \(eventSummary)
 
-		Recent conversation transcript (last 20 min):
-		\(transcriptContext.prefix(2000))
-
-		Review rules:
-		- If the transcript shows a caregiver CORRECTING a previous statement \
-		  (e.g. "actually she only ate 5 minutes" or "oh she didn't poop"), \
-		  return a correction.
-		- If an event is clearly wrong based on later context, correct or delete it.
-		- If everything looks fine, return an empty corrections array.
-		- Do NOT correct events just because they lack detail — only correct \
-		  events that are factually wrong based on what was said later.
+		Transcript: \(transcriptContext.prefix(800))
 		"""
 
 		let response = try await session.respond(
@@ -544,7 +650,6 @@ final class OnDeviceAnalysisService {
 		guard !result.corrections.isEmpty else { return [] }
 
 		return result.corrections.compactMap { correction -> EventCorrection? in
-			// Match the short ID prefix back to the full event ID
 			guard let matchedEvent = events.first(where: {
 				$0.id.hasPrefix(correction.eventIdPrefix)
 			}) else {
@@ -564,9 +669,6 @@ final class OnDeviceAnalysisService {
 		}
 	}
 
-	func resetSession() {
-		session = nil
-	}
 }
 
 // MARK: - Review result schema

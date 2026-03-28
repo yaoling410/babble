@@ -579,8 +579,14 @@ final class AudioCaptureService: ObservableObject {
             }
         }
 
+        // CryDetector always gets audio regardless of VAD — baby cries have
+        // strong energy at 300-600 Hz which the speech-band high-pass filter
+        // attenuates, causing the VAD to read "silence" during actual crying.
+        // SNAudioStreamAnalyzer has its own internal detection, so it doesn't
+        // need the VAD gate.
+        cryDetector?.appendBuffer(buffer)
+
         if vadActive {
-            cryDetector?.appendBuffer(buffer)
             wakeWordService?.appendBuffer(buffer)
         } else if isCapturing {
             // During an active capture, keep feeding the recognizer even through

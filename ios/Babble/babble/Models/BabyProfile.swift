@@ -91,6 +91,20 @@ final class BabyProfile: ObservableObject {
         didSet { UserDefaults.standard.set(useOnDeviceAnalysis, forKey: "useOnDeviceAnalysis") }
     }
 
+    /// All the ways WhisperKit might transcribe the baby's name, discovered
+    /// by running enrollment audio through multiple language decoders.
+    /// E.g. ["look a", "露卡", "陆卡", "looka"] for "Luca".
+    /// Used as WhisperKit prompt bias, RelevanceGate aliases, and FM correction hints.
+    @Published var nameVariants: [String] {
+        didSet { UserDefaults.standard.set(nameVariants, forKey: "nameVariants") }
+    }
+
+    /// Path to the saved name enrollment WAV (relative to App Support).
+    /// Kept so we can re-decode when the user changes language settings.
+    @Published var nameEnrollmentAudioPath: String? {
+        didSet { UserDefaults.standard.set(nameEnrollmentAudioPath, forKey: "nameEnrollmentAudioPath") }
+    }
+
     /// Known ASR mishearings for common baby names.
     /// Used to seed the aliases field on first launch so the wake word
     /// recognizer is already biased toward the correct name.
@@ -120,6 +134,8 @@ final class BabyProfile: ObservableObject {
         self.speechLocales = UserDefaults.standard.stringArray(forKey: "speechLocales") ?? ["en-US"]
         self.whisperLanguage = UserDefaults.standard.string(forKey: "whisperLanguage") ?? "auto"
         self.useOnDeviceAnalysis = UserDefaults.standard.bool(forKey: "useOnDeviceAnalysis")
+        self.nameVariants = UserDefaults.standard.stringArray(forKey: "nameVariants") ?? []
+        self.nameEnrollmentAudioPath = UserDefaults.standard.string(forKey: "nameEnrollmentAudioPath")
         // Load saved aliases, or seed with known ASR mishearings for common names.
         // Seeds when the key is absent OR when it's an empty array (user hasn't
         // manually edited aliases yet — an empty array was stored by a previous

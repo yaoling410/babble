@@ -97,6 +97,12 @@ enum AgeDefaults {
 
         /// Age-specific notes for the LLM prompt.
         var notes: [String]
+
+        /// Short Chinese vocab for WhisperKit prompt biasing (bare words, no descriptions).
+        var whisperVocabZh: String
+
+        /// Short English vocab for WhisperKit prompt biasing.
+        var whisperVocabEn: String
     }
 
     // ── Common events for all ages (0–36 months) ─────────────
@@ -134,13 +140,17 @@ enum AgeDefaults {
         extraTypes: Set<String> = [],
         activities: [String],
         extraVocab: [String],
-        extraNotes: [String]
+        extraNotes: [String],
+        whisperZh: String,
+        whisperEn: String
     ) -> AgeEventConfig {
         AgeEventConfig(
             allowedTypes: commonAllowedTypes.union(extraTypes),
             typicalActivities: activities,
             chineseVocab: commonChineseVocab + extraVocab,
-            notes: commonNotes + extraNotes
+            notes: commonNotes + extraNotes,
+            whisperVocabZh: whisperZh,
+            whisperVocabEn: whisperEn
         )
     }
 
@@ -159,7 +169,9 @@ enum AgeDefaults {
                     "Burping after every feed is normal at this age.",
                     "Spit up is common and usually not a concern.",
                     "Tummy time is an important activity.",
-                ]
+                ],
+                whisperZh: "拉屎 喂奶 吐奶 打嗝 拍嗝 换尿布 睡觉 醒了 哭了 趴着 发烧",
+                whisperEn: "bottle pooped diaper feeding burp spit nap crying tummy time"
             )
 
         case 4...6:
@@ -177,7 +189,9 @@ enum AgeDefaults {
                     "Baby may be starting solids — first foods tracked as new_food.",
                     "Rolling over is a common milestone.",
                     "Burping still relevant but less frequent.",
-                ]
+                ],
+                whisperZh: "拉屎 喂奶 辅食 吐奶 打嗝 换尿布 睡觉 醒了 哭了 翻身 发烧",
+                whisperEn: "bottle pooped diaper feeding solids burp nap crying rolled over"
             )
 
         case 7...12:
@@ -194,7 +208,9 @@ enum AgeDefaults {
                     "No burping — do NOT extract burping events.",
                     "No spit up — baby has outgrown this.",
                     "Crawling, pulling up, standing are key milestones.",
-                ]
+                ],
+                whisperZh: "拉屎 吃饭 辅食 换尿布 睡觉 醒了 哭了 爬了 站起来 长牙 发烧",
+                whisperEn: "pooped eating diaper solids nap crying crawling standing teething"
             )
 
         case 13...24:
@@ -213,7 +229,9 @@ enum AgeDefaults {
                     "No burping, no spit up, no tummy time at this age.",
                     "Walking, talking, and tantrums are common.",
                     "Falls and accidents are frequent — track with accident type.",
-                ]
+                ],
+                whisperZh: "拉屎 吃饭 换尿布 睡觉 醒了 哭了 走路 说话 发脾气 摔了 发烧",
+                whisperEn: "pooped eating diaper nap crying walking talking tantrum fell"
             )
 
         default: // 25+ months
@@ -232,7 +250,9 @@ enum AgeDefaults {
                     "Potty training may be starting — track toilet attempts.",
                     "No burping, no spit up, no tummy time.",
                     "Running, jumping, and sentences are milestones.",
-                ]
+                ],
+                whisperZh: "拉屎 吃饭 上厕所 坐马桶 睡觉 醒了 哭了 跑了 说话 发脾气 摔了",
+                whisperEn: "pooped eating potty diaper nap crying running talking tantrum fell"
             )
         }
     }

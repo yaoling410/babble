@@ -25,8 +25,7 @@ enum OnDeviceDiarizationService {
     private static var speakerKit: SpeakerKit?
 
     static func diarize(
-        window: WhisperKitService.TranscriptionWindow,
-        speakerStore: SpeakerStore
+        window: WhisperKitService.TranscriptionWindow
     ) async throws -> DiarizationResult {
         // 1. Initialize SpeakerKit if needed
         if speakerKit == nil {
@@ -46,17 +45,10 @@ enum OnDeviceDiarizationService {
         var transcriptParts: [String] = []
 
         for segment in diarResult.segments {
-            let speakerLabel = segment.speaker.description
+            let label = segment.speaker.description
             let text = segment.text.trimmingCharacters(in: .whitespaces)
             guard !text.isEmpty else { continue }
 
-            // Try to match against enrolled speakers
-            let matchedLabel = matchSpeaker(
-                segmentSpeaker: speakerLabel,
-                speakerStore: speakerStore
-            )
-
-            let label = matchedLabel ?? speakerLabel
             transcriptParts.append("[\(label)]: \(text)")
             outputSegments.append((
                 speaker: label,
@@ -65,13 +57,11 @@ enum OnDeviceDiarizationService {
                 text: text
             ))
 
-            if matchedLabel == nil {
-                unknowns.append((
-                    tempLabel: speakerLabel,
-                    start: Double(segment.startTime),
-                    end: Double(segment.endTime)
-                ))
-            }
+            unknowns.append((
+                tempLabel: label,
+                start: Double(segment.startTime),
+                end: Double(segment.endTime)
+            ))
         }
 
         let annotated = transcriptParts.joined(separator: " ")
@@ -83,25 +73,7 @@ enum OnDeviceDiarizationService {
         )
     }
 
-    // MARK: - Speaker matching
-
-    /// Match a diarization speaker label against enrolled .skemb profiles.
-    /// Returns the enrolled label (e.g. "Mom") or nil if no match.
-    private static func matchSpeaker(
-        segmentSpeaker: String,
-        speakerStore: SpeakerStore
-    ) -> String? {
-        // TODO: Extract embedding for the segment audio and cosine-compare
-        // against speakerStore.loadSKEmbedding(speakerId:) for each enrolled speaker.
-        // For now, return nil (all speakers labeled by SpeakerKit's anonymous IDs).
-        //
-        // Implementation when embeddings are available:
-        // 1. Extract embedding from segment audio via SpeakerKit's embedder
-        // 2. For each enrolled speaker, load .skemb
-        // 3. Cosine similarity > 0.75 → match
-        // 4. Return best match label or nil
-        return nil
-    }
+    // MARK: - Utilities
 
     /// Cosine similarity between two float vectors (vDSP-accelerated).
     static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
