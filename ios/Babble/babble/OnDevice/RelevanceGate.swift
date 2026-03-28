@@ -17,7 +17,7 @@ import Foundation
 
 enum RelevanceGate {
 
-    static func isRelevant(text: String, babyName: String) -> Bool {
+    static func isRelevant(text: String, babyName: String, nameAliases: [String] = [], isOnlyBaby: Bool = true) -> Bool {
         let lower = text.lowercased().trimmingCharacters(in: .whitespaces)
         guard !lower.isEmpty else { return false }
 
@@ -28,8 +28,12 @@ enum RelevanceGate {
         if words.count < 3 && !hasChinese { return false }
         if isOnlyFiller(words) { return false }
 
-        // 1. Baby's name
+        // 1. Baby's name or known ASR mishearings
+        // WhisperKit may garble "Luca" → "Localash", "Looka", etc.
         if !babyName.isEmpty && lower.contains(babyName.lowercased()) { return true }
+        for alias in nameAliases {
+            if !alias.isEmpty && lower.contains(alias.lowercased()) { return true }
+        }
 
         // 2. Single-word keywords (O(1))
         let wordSet = Set(words)
@@ -47,6 +51,19 @@ enum RelevanceGate {
 
         // 6. Pronoun + baby keyword co-occurrence
         if hasPronounWithBabyContext(words) { return true }
+
+        // 7. Only-baby mode: any health/care question or pronoun reference is enough.
+        // "She pooped", "is he sick?", "是生病了吗?" — all refer to this baby.
+        if isOnlyBaby {
+            let pronouns: Set<String> = ["she", "he", "her", "him", "the baby", "baby"]
+            if !Set(words).isDisjoint(with: pronouns) && words.count >= 2 { return true }
+            // Chinese: 她/他/是 with any content — in only-baby mode, these imply the baby
+            if lower.contains("她") || lower.contains("他") { return true }
+            // Chinese question patterns about baby: 是...吗, 有没有, 怎么了
+            if lower.contains("是") && lower.contains("吗") { return true }
+            if lower.contains("怎么了") { return true }
+            if lower.contains("有没有") { return true }
+        }
 
         return false
     }
@@ -166,7 +183,7 @@ enum RelevanceGate {
     // MARK: - Chinese keywords
 
     private static let chineseSingleCharKeywords: Set<String> = [
-        "哭", "奶", "睡", "吃", "尿", "拉", "烧", "饿", "困",
+        "哭", "奶", "睡", "吃", "尿", "拉", "烧", "饿", "困", "病", "吐",
     ]
 
     private static let chineseKeywords: [String] = [
@@ -179,11 +196,13 @@ enum RelevanceGate {
         "夜醒", "夜奶", "夜哭", "睡眠训练",
         "瞓覺", "瞓著", "唔瞓",
         "尿布", "纸尿裤", "便便", "大便", "小便", "拉了",
+        "拉屎", "拉臭臭", "拉粑粑", "拉死",  // 拉死 is a common ASR mishearing of 拉屎
         "换尿布", "尿布疹",
         "屙屎", "屙尿", "濕了", "換片",
         "发烧", "体温", "儿科", "疫苗", "打针",
         "鼻塞", "咳嗽", "感冒", "长牙", "过敏",
         "腹泻", "便秘", "体检", "胀气", "黄疸", "湿疹",
+        "生病", "不舒服", "难受", "不好", "有点烫",
         "發燒", "睇醫生",
         "笑了", "翻身", "爬了", "站起来", "走路了",
         "坐起来", "第一次", "趴着练习",

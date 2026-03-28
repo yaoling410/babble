@@ -49,6 +49,14 @@ final class BabyProfile: ObservableObject {
         didSet { UserDefaults.standard.set(babyAgeMonths, forKey: "babyAgeMonths") }
     }
 
+    /// True if this is the only baby at home. When true, ALL baby-related
+    /// conversation is attributed to this baby — no need to hear the name.
+    /// "She pooped", "he's sleeping", "the baby ate" all count.
+    /// When false, the name must appear to distinguish between children.
+    @Published var isOnlyBaby: Bool {
+        didSet { UserDefaults.standard.set(isOnlyBaby, forKey: "isOnlyBaby") }
+    }
+
     /// Base URL of the FastAPI backend (no trailing slash).
     /// Default points to a local network host (common for home server setups).
     /// Example: "http://10.0.0.100:8000" or "https://babble.example.com"
@@ -70,10 +78,15 @@ final class BabyProfile: ObservableObject {
         didSet { UserDefaults.standard.set(nameAliases, forKey: "nameAliases") }
     }
 
+    /// WhisperKit transcription language mode for the on-device build.
+    /// "auto" = auto-detect per window (handles bilingual mid-sentence switching).
+    /// "en" = English only, "zh" = Chinese only, "en+zh" = both (auto-detect between them).
+    @Published var whisperLanguage: String {
+        didSet { UserDefaults.standard.set(whisperLanguage, forKey: "whisperLanguage") }
+    }
+
     /// When true and running iOS 26+, use Apple's on-device Foundation Models
     /// (3B LLM) for event extraction instead of the Gemini backend.
-    /// Fully offline, zero cost, lower latency — but less accurate than Gemini
-    /// and no speaker diarization or past-event corrections.
     @Published var useOnDeviceAnalysis: Bool {
         didSet { UserDefaults.standard.set(useOnDeviceAnalysis, forKey: "useOnDeviceAnalysis") }
     }
@@ -102,8 +115,10 @@ final class BabyProfile: ObservableObject {
         // Load from UserDefaults, falling back to sensible defaults for first run.
         self.babyName      = UserDefaults.standard.string(forKey: "babyName") ?? ""
         self.babyAgeMonths = UserDefaults.standard.integer(forKey: "babyAgeMonths")
+        self.isOnlyBaby    = UserDefaults.standard.object(forKey: "isOnlyBaby") == nil ? true : UserDefaults.standard.bool(forKey: "isOnlyBaby")
         self.backendURL    = UserDefaults.standard.string(forKey: "backendURL") ?? "http://10.0.0.100:8000"
         self.speechLocales = UserDefaults.standard.stringArray(forKey: "speechLocales") ?? ["en-US"]
+        self.whisperLanguage = UserDefaults.standard.string(forKey: "whisperLanguage") ?? "auto"
         self.useOnDeviceAnalysis = UserDefaults.standard.bool(forKey: "useOnDeviceAnalysis")
         // Load saved aliases, or seed with known ASR mishearings for common names.
         // Seeds when the key is absent OR when it's an empty array (user hasn't

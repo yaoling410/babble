@@ -59,43 +59,27 @@ struct SettingsView: View {
                             }
                     }
                     .padding(.vertical, 2)
+
+                    Toggle(isOn: $profile.isOnlyBaby) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Only Baby at Home")
+                            Text("Track all baby-related talk as \(profile.babyName.isEmpty ? "this baby" : profile.babyName)'s — no need to say the name. Turn off if multiple children live here.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
-                Section {
+                Section("Speech") {
                     #if BABBLE_ON_DEVICE
-                    if #available(iOS 26.0, *) {
-                        Toggle(isOn: $profile.useOnDeviceAnalysis) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("On-Device Analysis")
-                                Text("Uses WhisperKit + FoundationModels 3B for offline analysis. Manage model downloads below.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("WhisperKit model")
-                                Spacer()
-                                Text("Not downloaded")
-                                    .foregroundColor(.secondary)
-                            }
-                            Button("Download Model") {
-                                // TODO: trigger model download via WhisperKitService
-                            }
-                        }
+                    Picker("Language", selection: $profile.whisperLanguage) {
+                        Text("Auto-detect").tag("auto")
+                        Text("English").tag("en")
+                        Text("Chinese (Mandarin)").tag("zh")
+                        Text("English + Chinese").tag("en+zh")
+                        Text("Cantonese").tag("yue")
                     }
                     #else
-                    if #available(iOS 26.0, *) {
-                        Toggle(isOn: $profile.useOnDeviceAnalysis) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("On-Device Analysis")
-                                Text("Uses Apple's on-device AI (free, offline, lower latency). Less accurate than Gemini — no speaker ID or past-event corrections.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
                     LabeledContent("Backend URL") {
                         TextField("http://localhost:8000", text: $profile.backendURL)
                             .multilineTextAlignment(.trailing)
@@ -104,12 +88,6 @@ struct SettingsView: View {
                             .keyboardType(.URL)
                     }
                     #endif
-                } header: {
-                    Text("Analysis")
-                } footer: {
-                    if #available(iOS 26.0, *), profile.useOnDeviceAnalysis {
-                        Text("Backend is still used for daily summaries, voice notes, and the hourly audio vault batch.")
-                    }
                 }
 
                 Section("Speakers") {

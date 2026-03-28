@@ -294,10 +294,11 @@ final class WhisperKitService {
                 return
             }
 
-            // Filter Whisper hallucinations — repetitive garbage characters
-            // produced when the model receives noise that passed VAD.
-            guard !isHallucination(text) else {
-                NSLog("[WhisperKit] 🚫 Hallucination filtered — repetitive/garbage output")
+            // Quick sanity check — block pure garbage (repetitive chars, no real script).
+            // The Foundation Models correction step handles subtle errors;
+            // this only catches the most obvious nonsense to save LLM processing time.
+            guard !isObviousGarbage(text) else {
+                NSLog("[WhisperKit] 🚫 Obvious garbage filtered — skipping LLM correction")
                 return
             }
 
@@ -366,56 +367,22 @@ final class WhisperKitService {
         return parts.joined(separator: ", ")
     }
 
-    // MARK: - Hallucination filter
+    // MARK: - Garbage filter (minimal — LLM correction handles the rest)
 
-    /// Detect Whisper hallucinations: repetitive characters, garbage output,
-    /// bracket-wrapped tokens like "[끝]", or text in a wrong script.
-    private func isHallucination(_ text: String) -> Bool {
+    /// Block only the most obvious garbage to avoid wasting LLM processing time.
+    /// Subtle errors (wrong characters, hallucinated phrases, name misspellings)
+    /// are handled by the Foundation Models correction step in the pipeline.
+    private func isObviousGarbage(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 3 else { return false }
+        guard trimmed.count >= 2 else { return true }
 
-        // Check 1: Bracket-wrapped tokens — "[끝]", "[음악]", "(music)", etc.
-        // Whisper emits these as non-speech markers; they're never real transcription.
-        let stripped = trimmed
-            .replacingOccurrences(of: "[", with: "")
-            .replacingOccurrences(of: "]", with: "")
-            .replacingOccurrences(of: "(", with: "")
-            .replacingOccurrences(of: ")", with: "")
-            .trimmingCharacters(in: .whitespaces)
-        if stripped.count <= 4 && trimmed.contains("[") { return true }
-
-        // Check 2: Character diversity — hallucinations repeat the same few chars.
+        // Repetitive characters: "ლლლლლ", "aaaaaaa"
         let uniqueChars = Set(trimmed)
-        let diversityRatio = Double(uniqueChars.count) / Double(trimmed.count)
-        if diversityRatio < 0.15 { return true }
+        if Double(uniqueChars.count) / Double(trimmed.count) < 0.1 { return true }
 
-        // Check 3: Runs of 5+ identical characters — "aaaaa" or "ლლლლლ"
-        var maxRun = 1
-        var currentRun = 1
-        var prev: Character = " "
-        for ch in trimmed {
-            if ch == prev { currentRun += 1 } else { currentRun = 1 }
-            maxRun = max(maxRun, currentRun)
-            prev = ch
-        }
-        if maxRun >= 5 { return true }
-
-        // Check 4: Script validation — only count actual letters, not punctuation/brackets.
-        // Punctuation like "[" is ASCII but shouldn't make Korean text "pass" as Latin.
-        let letters = trimmed.unicodeScalars.filter { CharacterSet.letters.contains($0) }
-        let hasLatin = letters.contains { ($0.value >= 0x41 && $0.value <= 0x5A) || ($0.value >= 0x61 && $0.value <= 0x7A) }
-        let hasCJK = letters.contains { ($0.value >= 0x4E00 && $0.value <= 0x9FFF) }
-
-        switch language {
-        case "en":
-            if !hasLatin { return true }
-        case "zh", "yue":
-            if !hasCJK { return true }
-        case "en+zh", "auto":
-            if !hasLatin && !hasCJK { return true }
-        default:
-            if !hasLatin && !hasCJK { return true }
-        }
+        // No letters at all (only punctuation/symbols)
+        let hasAnyLetter = trimmed.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+        if !hasAnyLetter { return true }
 
         return false
     }

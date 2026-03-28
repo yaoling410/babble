@@ -54,6 +54,14 @@ extension MonitorViewModel {
                     }
                 }
                 .store(in: &cancellables)
+
+            // Forward emotional support detection to MonitorViewModel
+            pipeline.$emotionalSupportDetected
+                .receive(on: RunLoop.main)
+                .sink { [weak self] detected in
+                    if detected { self?.emotionalSupportDetected = true }
+                }
+                .store(in: &cancellables)
         }
     }
 
